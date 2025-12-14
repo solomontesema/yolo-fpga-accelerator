@@ -30,9 +30,9 @@ Alternative sources:
 
 **Expected File**: `yolov2.weights` (approximately 194 MB)
 
-### Step 2: Convert Weights to Binary Format
+### Step 2a: Convert Weights to Binary Format (fp32)
 
-Use the companion extractor/quantizer repo to produce the binaries expected here:
+Use the companion extractor/quantizer repo to produce the fp32 binaries expected here:
 
 ```
 cd weights
@@ -40,10 +40,21 @@ git clone https://github.com/solomontesema/nn-weight-extractor.git
 cd nn-weight-extractor
 # Follow the README in that repo to export YOLOv2 weights:
 # - Run the float32 export script to emit weights.bin and bias.bin
-# - (Optional) Run the int16 quantization/export flow for reduced-precision builds
 ```
 
 After running the extractor, copy or link the generated `weights.bin` and `bias.bin` into this `weights/` directory.
+
+### Step 2b (optional): Convert Weights to Binary Format (int16)
+
+In the same `nn-weight-extractor` repo, follow the int16 quantization/export steps:
+```
+cd weights/nn-weight-extractor
+# Follow the README section for int16 export:
+# - Generate weight_int16.bin and bias_int16.bin
+# - Generate per-layer Q tables (weight_int16_Q.bin, bias_int16_Q.bin)
+```
+
+Place the generated int16 binaries alongside the fp32 ones in this `weights/` directory.
 
 ### Step 3: Verify Weight Files
 
@@ -65,15 +76,18 @@ Verify file integrity by checking sizes:
 
 ### Step 4: Generate Reorganized Weights
 
-Once `weights.bin` and `bias.bin` are in place, generate the reorganized weight file:
+Once the raw binaries are in place, generate the reorganized weight file:
 
 ```bash
 cd ..  # Return to project root
 make gen
+# fp32 (default)
 ./yolov2_weight_gen
+# int16
+./yolov2_weight_gen --precision int16
 ```
 
-This creates `weights/weights_reorg.bin` optimized for the inference engine.
+This creates `weights/weights_reorg.bin` (fp32) and `weights/weights_reorg_int16.bin` (int16) optimized for the inference engine.
 
 ## File Descriptions
 

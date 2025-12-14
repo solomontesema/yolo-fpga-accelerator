@@ -107,6 +107,7 @@ clean:
 distclean: clean
 	@echo "$(COLOR_BLUE)Deep cleaning all generated files...$(COLOR_RESET)"
 	@rm -f $(WEIGHTS_DIR)/weights_reorg.bin
+	@rm -f $(WEIGHTS_DIR)/weights_reorg_int16.bin
 	@rm -f yolo_last_layer_output.txt
 	@echo "$(COLOR_GREEN)Deep clean complete$(COLOR_RESET)"
 
