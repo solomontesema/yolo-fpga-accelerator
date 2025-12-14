@@ -1,0 +1,80 @@
+YOLOv2 Float32 Object Detection - License Information
+
+This project contains code from multiple sources with different licenses:
+
+================================================================================
+YOLOv2 Implementation
+================================================================================
+
+The YOLOv2 implementation in this repository is based on the Darknet framework
+and YOLOv2 algorithm by Joseph Redmon and Ali Farhadi.
+
+Original Darknet: https://github.com/pjreddie/darknet
+YOLOv2 Paper: "YOLO9000: Better, Faster, Stronger"
+
+The Darknet framework and YOLOv2 implementation are in the Public Domain.
+
+================================================================================
+STB Image Libraries (include/third_party/)
+================================================================================
+
+This project uses STB image libraries for image I/O operations:
+- stb_image.h
+- stb_image_write.h
+
+These libraries are available under dual license:
+
+ALTERNATIVE A - MIT License
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+ALTERNATIVE B - Public Domain (www.unlicense.org)
+
+See individual STB header files for complete license text.
+
+================================================================================
+This Implementation
+================================================================================
+
+The code organization, documentation, and structure of this specific
+implementation are provided as-is for educational and research purposes.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+Attribution
+================================================================================
+
+When using this implementation, please cite:
+
+1. The original YOLOv2 paper:
+   Redmon, J., & Farhadi, A. (2017). YOLO9000: Better, faster, stronger.
+   In Proceedings of the IEEE conference on computer vision and pattern
+   recognition (pp. 7263-7271).
+
+2. The original Darknet framework:
+   https://pjreddie.com/darknet/yolo/
+
+================================================================================
+

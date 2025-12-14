@@ -1,0 +1,56 @@
+# Compiled executables
+yolov2_detect
+yolov2_weight_gen
+test
+
+# Object files
+*.o
+*.obj
+
+# Generated weight files
+weights/*.bin
+weights/*.weights
+
+# Generated configuration headers
+hls/params.hpp
+hls/core/params.hpp
+
+# Output images
+*.png
+!examples/**/*.png
+
+# Build directory contents
+build/*
+!build/.gitkeep
+
+# Debug output
+yolo_last_layer_output.txt
+
+# IDE and editor files
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Backup files
+*.bak
+*.backup
+
+# Core dumps (root-level)
+/core
+/core.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files
+*.log
