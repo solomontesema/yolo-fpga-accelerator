@@ -32,15 +32,18 @@ Alternative sources:
 
 ### Step 2: Convert Weights to Binary Format
 
-**Important**: This implementation requires a preliminary conversion step that was performed in a previous project stage. The conversion process extracts weights and biases from the Darknet format into separate binary files.
+Use the companion extractor/quantizer repo to produce the binaries expected here:
 
-The conversion typically involves:
-1. Loading the Darknet weights file
-2. Parsing the network structure from the .cfg file
-3. Extracting weights and biases for each layer
-4. Writing them to `weights.bin` and `bias.bin` in the appropriate format
+```
+cd weights
+git clone https://github.com/solomontesema/nn-weight-extractor.git
+cd nn-weight-extractor
+# Follow the README in that repo to export YOLOv2 weights:
+# - Run the float32 export script to emit weights.bin and bias.bin
+# - (Optional) Run the int16 quantization/export flow for reduced-precision builds
+```
 
-**Note**: The weight conversion tool is part of a separate preprocessing pipeline. If working with this project for the first time, the conversion scripts should be obtained from the original project source or implemented based on Darknet weight format specifications.
+After running the extractor, copy or link the generated `weights.bin` and `bias.bin` into this `weights/` directory.
 
 ### Step 3: Verify Weight Files
 
@@ -211,4 +214,3 @@ For weight conversion issues or questions:
 ---
 
 **Note**: The binary weight format is specific to this implementation. Standard Darknet weights require conversion before use.
-

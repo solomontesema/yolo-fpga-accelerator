@@ -4,3 +4,5 @@
 # But keep the README
 !README.md
 
+# External extractor/quantizer repo (local clone only)
+nn-weight-extractor/
