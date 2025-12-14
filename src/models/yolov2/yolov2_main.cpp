@@ -22,6 +22,7 @@
 #include <filesystem>
 
 #include <core/yolo.h>
+#include <core/precision.hpp>
 #include <api.hpp>
 
 namespace {
@@ -35,6 +36,7 @@ struct AppConfig {
     float nms = 0.45f;
     float hier_thresh = 0.5f;
     enum class Backend { Hls, Cpu } backend = Backend::Hls;
+    Precision precision = Precision::FP32;
 };
 
 void print_usage(const char *prog) {
@@ -49,6 +51,7 @@ void print_usage(const char *prog) {
         "  --nms <float>         NMS IoU threshold (default: 0.45)\n"
         "  --hier <float>        Hierarchical threshold (default: 0.5)\n"
         "  --backend <hls|cpu>   Backend selector (default: hls; cpu stub)\n"
+        "  --precision <fp32|int16> Precision selector (default: fp32; int16 wiring in progress)\n"
         "  --help                Show this help message\n",
         prog);
 }
@@ -87,6 +90,13 @@ AppConfig parse_args(int argc, char **argv) {
             } else {
                 std::fprintf(stderr, "Unsupported backend '%s'. Use 'hls' (available) or 'cpu' (stub).\n",
                              backend_val.c_str());
+                std::exit(1);
+            }
+        } else if (arg == "--precision" && i + 1 < argc) {
+            try {
+                cfg.precision = parse_precision(argv[++i]);
+            } catch (const std::exception &e) {
+                std::fprintf(stderr, "%s\n", e.what());
                 std::exit(1);
             }
         } else if (starts_with(arg, "--")) {
@@ -221,7 +231,13 @@ void run_detector(AppConfig cfg) {
     std::printf("  cfg:    %s\n", cfg.cfg_path.c_str());
     std::printf("  names:  %s\n", cfg.names_path.c_str());
     std::printf("  input:  %s\n", cfg.input_path.c_str());
+    std::printf("  precision: %s\n", to_string(cfg.precision));
     std::printf("  output: %s[.png]\n", cfg.output_prefix.c_str());
+
+    if (cfg.precision == Precision::INT16) {
+        std::fprintf(stderr, "Int16 inference wiring is in progress; please run with --precision fp32 for now.\n");
+        std::exit(1);
+    }
 
     NetworkGuard net_guard;
     net_guard.ptr = load_network(const_cast<char *>(cfg.cfg_path.c_str()));

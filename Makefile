@@ -4,7 +4,7 @@
 # 
 # Available targets:
 #   make all      - Build all components (default)
-#   make gen      - Generate weight reorganization files
+#   make gen      - Generate weight reorganization files (fp32/int16)
 #   make test     - Build the detection application
 #   make clean    - Remove built files
 #   make help     - Display this help message
@@ -55,7 +55,7 @@ all: test
 help:
 	@echo "$(COLOR_BOLD)YOLOv2 Float32 Detection - Available Targets:$(COLOR_RESET)"
 	@echo "  $(COLOR_GREEN)make all$(COLOR_RESET)      - Build all components (default)"
-	@echo "  $(COLOR_GREEN)make gen$(COLOR_RESET)      - Generate weight reorganization files"
+	@echo "  $(COLOR_GREEN)make gen$(COLOR_RESET)      - Generate weight reorganization files (fp32/int16)"
 	@echo "  $(COLOR_GREEN)make test$(COLOR_RESET)     - Build the detection application"
 	@echo "  $(COLOR_GREEN)make debug$(COLOR_RESET)    - Build with debug symbols"
 	@echo "  $(COLOR_GREEN)make clean$(COLOR_RESET)    - Remove built files"
@@ -73,7 +73,7 @@ gen: $(BUILD_DIR)
 	@cd . && python3 $(HW_PARAMS_SCRIPT)
 	@echo "$(COLOR_BLUE)Building weight generation executable...$(COLOR_RESET)"
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(GEN_TARGET) $(WEIGHT_GEN_SRC) $(CORE_SRCS) hls/models/yolov2/model_config.cpp $(EXTRA_SRCS) $(LDFLAGS)
-	@echo "$(COLOR_GREEN)Weight generation build complete. Run ./$(GEN_TARGET) to generate weights_reorg.bin$(COLOR_RESET)"
+	@echo "$(COLOR_GREEN)Weight generation build complete. Run ./$(GEN_TARGET) [--precision fp32|int16] to generate weights_reorg*.bin$(COLOR_RESET)"
 
 # Build the main detection application
 .PHONY: test
