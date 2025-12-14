@@ -177,8 +177,13 @@ DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=K)
 HLS_PRAGMA(HLS PIPELINE II=1)
                     for( of = 0; of < Tn; of++)
                     {
-                        if(i==0&&j==0)
+                        if(i==0&&j==0) {
+#ifdef INT16_MODE
+                            tmp[of] = static_cast<IO_Dtype>(-32768);
+#else
                             tmp[of] = -1024*1024;
+#endif
+                        }
 
                         if(Input[of][tr*Kstride+i][tc*Kstride+j] > tmp[of])
                             tmp[of] = Input[of][tr*Kstride+i][tc*Kstride+j];

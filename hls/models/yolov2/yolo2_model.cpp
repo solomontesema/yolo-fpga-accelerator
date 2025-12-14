@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <cmath>
 #include <cstdint>
+#include <type_traits>
 
 namespace {
 void generate_iofm_offset(IO_Dtype* in_ptr[32], IO_Dtype* out_ptr[32], IO_Dtype *Memory_buf, network *net, const ModelConfig &cfg)
@@ -122,6 +123,7 @@ std::vector<T> read_binary(const std::string &path) {
 struct WeightsPack {
     std::vector<IO_Dtype> weights;
     std::vector<IO_Dtype> bias;
+    std::vector<int> act_q; // per-layer activation Q (iofm_Q)
 };
 
 WeightsPack load_weights(const network *net, Precision precision) {
@@ -139,57 +141,57 @@ WeightsPack load_weights(const network *net, Precision precision) {
     if (precision == Precision::FP32) {
         auto w = read_binary<float>("weights/weights_reorg.bin");
         auto b = read_binary<float>("weights/bias.bin");
-        if (w.size() < expected_w) throw std::runtime_error("weights_reorg.bin too small");
-        if (b.size() < expected_b) throw std::runtime_error("bias.bin too small");
-        std::vector<IO_Dtype> wbuf(w.begin(), w.end());
+        if (w.size() < expected_w) throw std::runtime_error("weights file too small");
+        if (b.size() < expected_b) throw std::runtime_error("bias file too small");
+        std::vector<IO_Dtype> wbuf(w.begin(), w.begin() + expected_w);
         std::vector<IO_Dtype> bbuf(b.begin(), b.begin() + expected_b);
-        return {std::move(wbuf), std::move(bbuf)};
-    }
+        return {std::move(wbuf), std::move(bbuf), {}};
+    } else {
+        auto w = read_binary<int16_t>("weights/weights_reorg_int16.bin");
+        auto b = read_binary<int16_t>("weights/bias_int16.bin");
+        if (w.size() < expected_w) throw std::runtime_error("weights file too small");
+        if (b.size() < expected_b) throw std::runtime_error("bias file too small");
 
-    auto wq = read_binary<int16_t>("weights/weights_reorg_int16.bin");
-    auto bq = read_binary<int16_t>("weights/bias_int16.bin");
-    auto wQ = read_binary<int32_t>("weights/weight_int16_Q.bin");
-    auto bQ = read_binary<int32_t>("weights/bias_int16_Q.bin");
-
-    if (wQ.size() < static_cast<size_t>(conv_layers) || bQ.size() < static_cast<size_t>(conv_layers)) {
-        throw std::runtime_error("Q tables too small for conv layers");
-    }
-    if (wq.size() < expected_w || bq.size() < expected_b) {
-        throw std::runtime_error("int16 weight/bias files too small");
-    }
-
-    WeightsPack pack;
-    pack.weights.resize(wq.size());
-    pack.bias.resize(expected_b);
-
-    size_t woff = 0;
-    size_t boff = 0;
-    for (int li = 0; li < conv_layers; ++li) {
-        const int wlen = cfg.weight_offsets[li];
-        const int blen = cfg.beta_offsets[li];
-        const float w_scale = std::ldexp(1.0f, -wQ[li]);
-        const float b_scale = std::ldexp(1.0f, -bQ[li]);
-
-        if (woff + wlen > wq.size()) throw std::runtime_error("int16 weight truncated at layer " + std::to_string(li));
-        if (boff + blen > bq.size()) throw std::runtime_error("int16 bias truncated at layer " + std::to_string(li));
-
-        for (int i = 0; i < wlen; ++i) {
-            pack.weights[woff + i] = static_cast<IO_Dtype>(static_cast<float>(wq[woff + i]) * w_scale);
-        }
-        for (int i = 0; i < blen; ++i) {
-            pack.bias[boff + i] = static_cast<IO_Dtype>(static_cast<float>(bq[boff + i]) * b_scale);
+        auto wQ = read_binary<int32_t>("weights/weight_int16_Q.bin");
+        auto bQ = read_binary<int32_t>("weights/bias_int16_Q.bin");
+        if (wQ.size() < static_cast<size_t>(conv_layers) || bQ.size() < static_cast<size_t>(conv_layers)) {
+            throw std::runtime_error("Q tables too small for conv layers");
         }
 
-        woff += wlen;
-        boff += blen;
-    }
+        // Optional activation Q table (iofm)
+        std::vector<int> act_q;
+        try {
+            act_q = read_binary<int32_t>("weights/iofm_Q.bin");
+        } catch (...) {
+            act_q.clear();
+        }
 
-    // Zero any remaining padding slots beyond expected_w (if present).
-    for (size_t i = expected_w; i < pack.weights.size(); ++i) {
-        pack.weights[i] = 0;
-    }
+        std::vector<IO_Dtype> wbuf(expected_w);
+        std::vector<IO_Dtype> bbuf(expected_b);
 
-    return pack;
+        size_t woff = 0;
+        size_t boff = 0;
+        for (int li = 0; li < conv_layers; ++li) {
+            const int wlen = cfg.weight_offsets[li];
+            const int blen = cfg.beta_offsets[li];
+            const float w_scale = std::ldexp(1.0f, -wQ[li]);
+            const float b_scale = std::ldexp(1.0f, -bQ[li]);
+
+            if (woff + wlen > w.size()) throw std::runtime_error("int16 weight truncated at layer " + std::to_string(li));
+            if (boff + blen > b.size()) throw std::runtime_error("int16 bias truncated at layer " + std::to_string(li));
+
+            for (int i = 0; i < wlen; ++i) {
+                wbuf[woff + i] = static_cast<IO_Dtype>(static_cast<float>(w[woff + i]) * w_scale);
+            }
+            for (int i = 0; i < blen; ++i) {
+                bbuf[boff + i] = static_cast<IO_Dtype>(static_cast<float>(b[boff + i]) * b_scale);
+            }
+
+            woff += wlen;
+            boff += blen;
+        }
+        return {std::move(wbuf), std::move(bbuf), std::move(act_q)};
+    }
 }
 
 void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
@@ -213,8 +215,22 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
 
     memcpy(in_ptr[0], input, 416*416*3*sizeof(IO_Dtype));//416x416x3 input_pic
 
-    IO_Dtype *region_buf = (IO_Dtype *)calloc(13*16*425,sizeof(IO_Dtype));
-    IO_Dtype *region_buf2 = (IO_Dtype *)calloc(13*16*425,sizeof(IO_Dtype));
+    // If activation Q table is available for int16, quantize input to simulate fixed-point range.
+    if (precision == Precision::INT16 && !wpack.act_q.empty()) {
+        const int q_in = wpack.act_q[0];
+        const float scale = std::ldexp(1.0f, q_in);
+        for (int idx = 0; idx < 416*416*3; ++idx) {
+            float v = static_cast<float>(in_ptr[0][idx]) * scale;
+            if (v > 32767.f) v = 32767.f;
+            if (v < -32768.f) v = -32768.f;
+            int16_t q = static_cast<int16_t>(std::lrintf(v));
+            in_ptr[0][idx] = static_cast<IO_Dtype>(static_cast<float>(q) * std::ldexp(1.0f, -q_in));
+        }
+    }
+
+    const int region_len = 13*16*425;
+    std::vector<IO_Dtype> region_buf(region_len, 0);
+    std::vector<IO_Dtype> region_buf2(region_len, 0);
 
     int offset_index = 0;
     int woffset = 0;
@@ -280,18 +296,18 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
 
                 tmp_ptr_f0 = in_ptr[i];
                 for(int k = 0; k<26*64; k++)
-                    memcpy((IO_Dtype *)(region_buf + k*26), (IO_Dtype *)(tmp_ptr_f0 + k*32), 26*sizeof(IO_Dtype));
-                reorg_cpu(region_buf, output_w, output_h, 4, 2, region_buf2);
-                tmp_ptr_f0 = region_buf;
-                memset(region_buf, 0,  13*16*256*sizeof(IO_Dtype));
+                    memcpy((IO_Dtype *)(region_buf.data() + k*26), (IO_Dtype *)(tmp_ptr_f0 + k*32), 26*sizeof(IO_Dtype));
+                reorg_cpu(region_buf.data(), output_w, output_h, 4, 2, region_buf2.data());
+                tmp_ptr_f0 = region_buf.data();
+                memset(region_buf.data(), 0,  13*16*256*sizeof(IO_Dtype));
                 for(int k = 0; k<13*256; k++)
-                    memcpy((IO_Dtype *)(tmp_ptr_f0 + k*16), (IO_Dtype *)(region_buf2 + k*13), 13*sizeof(IO_Dtype));
+                    memcpy((IO_Dtype *)(tmp_ptr_f0 + k*16), (IO_Dtype *)(region_buf2.data() + k*13), 13*sizeof(IO_Dtype));
                 memcpy(out_ptr[i], tmp_ptr_f0, 13*16*256*sizeof(IO_Dtype));
 
                 break;
             case ROUTE:
                 break;
-            case REGION:
+            case REGION: {
                 tmp_ptr_f0 = in_ptr[i];
                 for(int k = 0; k<13*425; k++)
                     for(int j = 0; j < 16; j++)
@@ -299,14 +315,26 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
                         if(j < 13)
                             region_buf[k*13 + j] = tmp_ptr_f0[k*16 + j];
                     }
-                forward_region_layer(l, region_buf);
+                std::vector<float> region_f(region_buf.size());
+                if (precision == Precision::INT16 && !wpack.act_q.empty()) {
+                    // Use last conv layer activation Q (conv30 index conv_layers-1)
+                    const int q_out = wpack.act_q.back();
+                    const float scale = std::ldexp(1.0f, -q_out);
+                    for (size_t t = 0; t < region_buf.size(); ++t) {
+                        region_f[t] = static_cast<float>(region_buf[t]) * scale;
+                    }
+                } else {
+                    for (size_t t = 0; t < region_buf.size(); ++t) {
+                        region_f[t] = static_cast<float>(region_buf[t]);
+                    }
+                }
+                forward_region_layer(l, region_f.data());
                 break;
+            }
             default:
                 break;
         }
     }
 
     free(Memory_buf);
-    free(region_buf);
-    free(region_buf2);
 }

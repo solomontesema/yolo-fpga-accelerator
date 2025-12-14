@@ -93,9 +93,14 @@ void input_load(IO_Dtype *input, IO_Dtype input_buffer[Tn][OnChipIB_Height][OnCh
     uint8_t bn_n0 = 0, bn_n1 = 0;
     bool pp = true;
     
-    IO_Dtype pad_value = 0.0f;
-    if(LayerType==1)
+    IO_Dtype pad_value = 0;
+    if(LayerType==1) {
+#ifdef INT16_MODE
+        pad_value = static_cast<IO_Dtype>(-32768);
+#else
         pad_value = -1024*1024;
+#endif
+    }
     
     int TnxTRow = Tn*TRow;
     int t = 0;

@@ -259,10 +259,13 @@ void run_detector(AppConfig cfg) {
     const int net_h = net_guard.ptr->h;
     ImageGuard sized(letterbox_image(input_img.img, net_w, net_h), true);
 
+    // Quantize input if building for int16.
+    IO_Dtype *input_ptr = sized.img.data;
+
     const auto start = std::chrono::high_resolution_clock::now();
     switch (cfg.backend) {
         case AppConfig::Backend::Hls:
-            yolov2_hls_ps(net_guard.ptr, sized.img.data, cfg.precision);
+            yolov2_hls_ps(net_guard.ptr, input_ptr, cfg.precision);
             break;
         case AppConfig::Backend::Cpu:
             // CPU path placeholder: the current codebase does not load float weights

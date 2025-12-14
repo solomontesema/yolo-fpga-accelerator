@@ -5,7 +5,8 @@
 # Available targets:
 #   make all      - Build all components (default)
 #   make gen      - Generate weight reorganization files (fp32/int16)
-#   make test     - Build the detection application
+#   make test     - Build the detection application (fp32)
+#   make test-int16 - Build the int16 detection application
 #   make clean    - Remove built files
 #   make help     - Display this help message
 
@@ -56,7 +57,8 @@ help:
 	@echo "$(COLOR_BOLD)YOLOv2 Float32 Detection - Available Targets:$(COLOR_RESET)"
 	@echo "  $(COLOR_GREEN)make all$(COLOR_RESET)      - Build all components (default)"
 	@echo "  $(COLOR_GREEN)make gen$(COLOR_RESET)      - Generate weight reorganization files (fp32/int16)"
-	@echo "  $(COLOR_GREEN)make test$(COLOR_RESET)     - Build the detection application"
+	@echo "  $(COLOR_GREEN)make test$(COLOR_RESET)     - Build the detection application (fp32)"
+	@echo "  $(COLOR_GREEN)make test-int16$(COLOR_RESET) - Build the detection application (int16)"
 	@echo "  $(COLOR_GREEN)make debug$(COLOR_RESET)    - Build with debug symbols"
 	@echo "  $(COLOR_GREEN)make clean$(COLOR_RESET)    - Remove built files"
 	@echo "  $(COLOR_GREEN)make help$(COLOR_RESET)     - Display this help message"
@@ -83,6 +85,15 @@ test: $(BUILD_DIR)
 	@echo "$(COLOR_BLUE)Building detection executable...$(COLOR_RESET)"
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(TARGET) $(MAIN_SRC) $(CORE_SRCS) $(HLS_SRCS) $(EXTRA_SRCS) -D REORG_TEST $(LDFLAGS)
 	@echo "$(COLOR_GREEN)Detection build complete. Run ./$(TARGET) [image_path]$(COLOR_RESET)"
+
+# Build the int16 detection application
+.PHONY: test-int16
+test-int16: $(BUILD_DIR)
+	@echo "$(COLOR_BLUE)Generating hardware parameters...$(COLOR_RESET)"
+	@cd . && python3 $(HW_PARAMS_SCRIPT)
+	@echo "$(COLOR_BLUE)Building int16 detection executable...$(COLOR_RESET)"
+	$(CXX) $(CXXFLAGS) -DINT16_MODE $(INCLUDES) -o $(TARGET) $(MAIN_SRC) $(CORE_SRCS) $(HLS_SRCS) $(EXTRA_SRCS) -D REORG_TEST $(LDFLAGS)
+	@echo "$(COLOR_GREEN)Int16 detection build complete. Run ./$(TARGET) --precision int16 [image_path]$(COLOR_RESET)"
 
 # Build with debug symbols
 .PHONY: debug
