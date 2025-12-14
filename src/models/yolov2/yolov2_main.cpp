@@ -51,7 +51,7 @@ void print_usage(const char *prog) {
         "  --nms <float>         NMS IoU threshold (default: 0.45)\n"
         "  --hier <float>        Hierarchical threshold (default: 0.5)\n"
         "  --backend <hls|cpu>   Backend selector (default: hls; cpu stub)\n"
-        "  --precision <fp32|int16> Precision selector (default: fp32; int16 wiring in progress)\n"
+        "  --precision <fp32|int16> Precision selector (default: fp32)\n"
         "  --help                Show this help message\n",
         prog);
 }
@@ -234,11 +234,6 @@ void run_detector(AppConfig cfg) {
     std::printf("  precision: %s\n", to_string(cfg.precision));
     std::printf("  output: %s[.png]\n", cfg.output_prefix.c_str());
 
-    if (cfg.precision == Precision::INT16) {
-        std::fprintf(stderr, "Int16 inference wiring is in progress; please run with --precision fp32 for now.\n");
-        std::exit(1);
-    }
-
     NetworkGuard net_guard;
     net_guard.ptr = load_network(const_cast<char *>(cfg.cfg_path.c_str()));
     if (!net_guard.ptr) {
@@ -267,7 +262,7 @@ void run_detector(AppConfig cfg) {
     const auto start = std::chrono::high_resolution_clock::now();
     switch (cfg.backend) {
         case AppConfig::Backend::Hls:
-            yolov2_hls_ps(net_guard.ptr, sized.img.data);
+            yolov2_hls_ps(net_guard.ptr, sized.img.data, cfg.precision);
             break;
         case AppConfig::Backend::Cpu:
             // CPU path placeholder: the current codebase does not load float weights

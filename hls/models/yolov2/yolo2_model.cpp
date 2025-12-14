@@ -15,6 +15,14 @@
 #include "core_io.hpp"
 #include "core_compute.hpp"
 #include "model_config.hpp"
+#include <core/precision.hpp>
+
+#include <vector>
+#include <string>
+#include <stdexcept>
+#include <filesystem>
+#include <cmath>
+#include <cstdint>
 
 namespace {
 void generate_iofm_offset(IO_Dtype* in_ptr[32], IO_Dtype* out_ptr[32], IO_Dtype *Memory_buf, network *net, const ModelConfig &cfg)
@@ -93,27 +101,104 @@ void reorg_cpu(IO_Dtype *x, int w, int h, int c, int stride, IO_Dtype *out)
 }
 } // namespace
 
-void yolov2_hls_ps(network *net, IO_Dtype *input)
+template <typename T>
+std::vector<T> read_binary(const std::string &path) {
+    FILE *fp = std::fopen(path.c_str(), "rb");
+    if (!fp) throw std::runtime_error("Failed to open file: " + path);
+    std::fseek(fp, 0, SEEK_END);
+    long sz = std::ftell(fp);
+    std::fseek(fp, 0, SEEK_SET);
+    if (sz < 0 || sz % sizeof(T) != 0) {
+        std::fclose(fp);
+        throw std::runtime_error("Invalid size for file: " + path);
+    }
+    std::vector<T> buf(sz / sizeof(T));
+    size_t rd = std::fread(buf.data(), sizeof(T), buf.size(), fp);
+    std::fclose(fp);
+    if (rd != buf.size()) throw std::runtime_error("Short read: " + path);
+    return buf;
+}
+
+struct WeightsPack {
+    std::vector<IO_Dtype> weights;
+    std::vector<IO_Dtype> bias;
+};
+
+WeightsPack load_weights(const network *net, Precision precision) {
+    const ModelConfig &cfg = yolo2_model_config();
+    int conv_layers = 0;
+    for (int i = 0; i < net->n; ++i) if (net->layers[i].type == CONVOLUTIONAL) conv_layers++;
+
+    size_t expected_w = 0;
+    size_t expected_b = 0;
+    for (int i = 0; i < conv_layers && i < static_cast<int>(cfg.weight_offsets.size()); ++i) {
+        expected_w += cfg.weight_offsets[i];
+        expected_b += cfg.beta_offsets[i];
+    }
+
+    if (precision == Precision::FP32) {
+        auto w = read_binary<float>("weights/weights_reorg.bin");
+        auto b = read_binary<float>("weights/bias.bin");
+        if (w.size() < expected_w) throw std::runtime_error("weights_reorg.bin too small");
+        if (b.size() < expected_b) throw std::runtime_error("bias.bin too small");
+        std::vector<IO_Dtype> wbuf(w.begin(), w.end());
+        std::vector<IO_Dtype> bbuf(b.begin(), b.begin() + expected_b);
+        return {std::move(wbuf), std::move(bbuf)};
+    }
+
+    auto wq = read_binary<int16_t>("weights/weights_reorg_int16.bin");
+    auto bq = read_binary<int16_t>("weights/bias_int16.bin");
+    auto wQ = read_binary<int32_t>("weights/weight_int16_Q.bin");
+    auto bQ = read_binary<int32_t>("weights/bias_int16_Q.bin");
+
+    if (wQ.size() < static_cast<size_t>(conv_layers) || bQ.size() < static_cast<size_t>(conv_layers)) {
+        throw std::runtime_error("Q tables too small for conv layers");
+    }
+    if (wq.size() < expected_w || bq.size() < expected_b) {
+        throw std::runtime_error("int16 weight/bias files too small");
+    }
+
+    WeightsPack pack;
+    pack.weights.resize(wq.size());
+    pack.bias.resize(expected_b);
+
+    size_t woff = 0;
+    size_t boff = 0;
+    for (int li = 0; li < conv_layers; ++li) {
+        const int wlen = cfg.weight_offsets[li];
+        const int blen = cfg.beta_offsets[li];
+        const float w_scale = std::ldexp(1.0f, -wQ[li]);
+        const float b_scale = std::ldexp(1.0f, -bQ[li]);
+
+        if (woff + wlen > wq.size()) throw std::runtime_error("int16 weight truncated at layer " + std::to_string(li));
+        if (boff + blen > bq.size()) throw std::runtime_error("int16 bias truncated at layer " + std::to_string(li));
+
+        for (int i = 0; i < wlen; ++i) {
+            pack.weights[woff + i] = static_cast<IO_Dtype>(static_cast<float>(wq[woff + i]) * w_scale);
+        }
+        for (int i = 0; i < blen; ++i) {
+            pack.bias[boff + i] = static_cast<IO_Dtype>(static_cast<float>(bq[boff + i]) * b_scale);
+        }
+
+        woff += wlen;
+        boff += blen;
+    }
+
+    // Zero any remaining padding slots beyond expected_w (if present).
+    for (size_t i = expected_w; i < pack.weights.size(); ++i) {
+        pack.weights[i] = 0;
+    }
+
+    return pack;
+}
+
+void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
 {
     const ModelConfig &cfg = yolo2_model_config();
 
-    IO_Dtype *Weight_buf = (IO_Dtype *)calloc(203767168/4,sizeof(IO_Dtype));
-    IO_Dtype *Beta_buf   = (IO_Dtype *)calloc(43044/4,sizeof(IO_Dtype));
-    IO_Dtype *tmp_ptr_f0;
-
-    FILE *fp_w = fopen("./weights/weights_reorg.bin", "rb");
-        if(!fp_w) file_error((char *)"./weights/weights_reorg.bin");
-
-    FILE *fp_b = fopen("./weights/bias.bin", "rb");
-        if(!fp_b) file_error((char *)"./weights/bias.bin");
-
-    size_t rw = fread(Weight_buf, sizeof(IO_Dtype), 203767168/4, fp_w);
-    size_t rb = fread(Beta_buf, sizeof(IO_Dtype), 43044/4, fp_b);
-    (void)rw;
-    (void)rb;
-    
-    fclose(fp_w);
-    fclose(fp_b);
+    WeightsPack wpack = load_weights(net, precision);
+    IO_Dtype *Weight_buf = wpack.weights.data();
+    IO_Dtype *Beta_buf   = wpack.bias.data();
 
 //leave some memories for overflow, because the load_module will load extra pixels near boundary for padding
     IO_Dtype *Memory_buf = (IO_Dtype*)calloc(cfg.mem_len+512*2,sizeof(IO_Dtype));
@@ -123,6 +208,7 @@ void yolov2_hls_ps(network *net, IO_Dtype *input)
     }
     IO_Dtype* in_ptr[32];
     IO_Dtype* out_ptr[32];
+    IO_Dtype* tmp_ptr_f0 = nullptr;
     generate_iofm_offset( in_ptr, out_ptr, Memory_buf, net, cfg);
 
     memcpy(in_ptr[0], input, 416*416*3*sizeof(IO_Dtype));//416x416x3 input_pic
@@ -221,8 +307,6 @@ void yolov2_hls_ps(network *net, IO_Dtype *input)
     }
 
     free(Memory_buf);
-    free(Weight_buf);
-    free(Beta_buf);
     free(region_buf);
     free(region_buf2);
 }
