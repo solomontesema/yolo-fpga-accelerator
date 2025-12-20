@@ -9,7 +9,8 @@
 void compute(IO_Dtype input_buffer[Tn][OnChipIB_Height][OnChipIB_Width], IO_Dtype output_buffer[Tm][Tr][Tc],
              IO_Dtype weight_buffer[Tm][Tn][K][K], IO_Dtype beta_buffer[MAX_BETA_LENGTH], int n_next[1],
              const int Ksize, const int Kstride, int m,
-             const int TM_MIN, const int TR_MIN, const int TC_MIN, bool enable);
+             const int TM_MIN, const int TR_MIN, const int TC_MIN, bool enable,
+             int Qw, int Qa_in, int Qa_out, int Qb);
 
 void pool_yolo2(IO_Dtype Input[Tn][OnChipIB_Height][OnChipIB_Width], IO_Dtype Output[Tm][Tr][Tc],
                 const int Ksize,const int Kstride,

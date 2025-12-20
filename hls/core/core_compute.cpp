@@ -22,8 +22,85 @@
 void compute(IO_Dtype input_buffer[Tn][OnChipIB_Height][OnChipIB_Width], IO_Dtype output_buffer[Tm][Tr][Tc],
              IO_Dtype weight_buffer[Tm][Tn][K][K], IO_Dtype beta_buffer[MAX_BETA_LENGTH], int n_next[1],
              const int Ksize,const int Kstride,int m,
-             const int TM_MIN,const int TR_MIN,const int TC_MIN,bool enable)
+             const int TM_MIN,const int TR_MIN,const int TC_MIN,bool enable,
+             int Qw, int Qa_in, int Qa_out, int Qb)
 {
+#ifdef INT16_MODE
+    static Acc_Dtype local_beta_buffer[Tm];
+HLS_PRAGMA(HLS ARRAY_PARTITION variable=local_beta_buffer complete dim=1)
+
+    if(!enable)
+    {
+        // Cache bias for this output block.
+        for (int tm = 0; tm < TM_MIN; ++tm) {
+            local_beta_buffer[tm] = static_cast<Acc_Dtype>(beta_buffer[m + tm]);
+        }
+        return;
+    }
+
+    uint8_t i,j,tr,tc,tm,tn;
+    const int n = n_next[0];
+
+    // Precompute shifts to align accumulator/bias into Qa_out domain.
+    const int shift_out = Qa_in + Qw - Qa_out;
+    const int shift_bias = Qb - Qa_out;
+
+    for(i =0;i < Ksize; i++)
+DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=K)
+        for(j = 0;j < Ksize; j++)
+DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=K)
+            for(tr = 0;tr < TR_MIN;tr++)
+DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=Tr)
+                for(tc = 0;tc < TC_MIN;tc++)
+                {
+DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=Tc)
+HLS_PRAGMA(HLS PIPELINE II=3)
+                    for(tm = 0;tm < Tm;tm++)
+                    {
+HLS_PRAGMA(HLS DEPENDENCE variable=output_buffer inter false)
+                        // Start from bias (shifted to Qa_out) on the very first tile.
+                        int64_t base;
+                        if(i==0 && j==0 && n==0) {
+                            int s = shift_bias;
+                            int64_t b = static_cast<int64_t>(local_beta_buffer[tm]);
+                            if (s > 0) {
+                                int adj = (s > 30) ? 30 : s;
+                                const int64_t rnd = 1LL << (adj - 1);
+                                base = (b + rnd) >> adj;
+                            } else if (s < 0) {
+                                int adj = (-s > 30) ? 30 : -s;
+                                base = b << adj;
+                            } else {
+                                base = b;
+                            }
+                        } else {
+                            base = static_cast<int64_t>(output_buffer[tm][tr][tc]);
+                        }
+
+                        int64_t partial_sum = 0;
+                        for(tn = 0;tn <Tn;tn++)
+                        {
+                            partial_sum += static_cast<int64_t>(weight_buffer[tm][tn][i][j]) *
+                                           static_cast<int64_t>(input_buffer[tn][Kstride*tr+i][Kstride*tc+j]);
+                        }
+
+                        int64_t scaled = partial_sum;
+                        if (shift_out > 0) {
+                            int s = (shift_out > 30) ? 30 : shift_out;
+                            const int64_t rnd = 1LL << (s - 1);
+                            scaled = (scaled + rnd) >> s;
+                        } else if (shift_out < 0) {
+                            int s = (-shift_out > 30) ? 30 : -shift_out;
+                            scaled = scaled << s;
+                        }
+
+                        int64_t acc = base + scaled;
+                        if (acc > 32767) acc = 32767;
+                        if (acc < -32768) acc = -32768;
+                        output_buffer[tm][tr][tc] = static_cast<IO_Dtype>(acc);
+                    }
+                }
+#else
     static IO_Dtype local_beta_buffer[Tm];
 HLS_PRAGMA(HLS ARRAY_PARTITION variable=local_beta_buffer complete dim=1)
 
@@ -74,6 +151,7 @@ HLS_PRAGMA(HLS DEPENDENCE variable=output_buffer inter false)
                     }
 
                 }
+#endif
 }
 
 void nonlinear_leaky_row(IO_Dtype output_localbuf[Tc], IO_Dtype Input[Tm][Tr][Tc], uint8_t tm, uint8_t tr, uint8_t *tm_n, uint8_t *tr_n, uint8_t TC_MIN,const bool IsNL, bool enable)
@@ -84,17 +162,28 @@ void nonlinear_leaky_row(IO_Dtype output_localbuf[Tc], IO_Dtype Input[Tm][Tr][Tc
     uint8_t tc;
     assert((TC_MIN>0)&&(TC_MIN<=Tc));
 
+#ifndef INT16_MODE
     IO_Dtype tmp_out;
+#endif
     for(tc = 0;tc < TC_MIN;tc++)
     {
 DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=Tc)
 HLS_PRAGMA(HLS PIPELINE II=1)
         IO_Dtype tmp = Input[tm][tr][tc];
+#ifdef INT16_MODE
+        int32_t tmp_i = static_cast<int32_t>(tmp);
+        if(IsNL && tmp_i < 0)
+            tmp_i = tmp_i / 10;
+        if (tmp_i > 32767) tmp_i = 32767;
+        if (tmp_i < -32768) tmp_i = -32768;
+        output_localbuf[tc] = static_cast<IO_Dtype>(tmp_i);
+#else
         if((tmp < 0.0f)&&IsNL)
             tmp_out = tmp*0.1f;
         else
             tmp_out = tmp;
         output_localbuf[tc] = tmp_out;
+#endif
     }
 
     *tm_n = tm;

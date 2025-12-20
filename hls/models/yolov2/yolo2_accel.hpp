@@ -15,6 +15,7 @@ void YOLO2_FPGA(IO_Dtype *Input, IO_Dtype *Output, IO_Dtype *Weight, IO_Dtype *B
                 int Padding, bool IsNL, bool IsBN,
                 int TM, int TN, int TR, int TC,
                 int OFM_num_bound, int mLoopsxTM,
-                int mLoops_a1xTM, int LayerType);
+                int mLoops_a1xTM, int LayerType,
+                int Qw, int Qa_in, int Qa_out, int Qb);
 
-void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision);
+void yolov2_hls_ps(network *net, const float *input, Precision precision);

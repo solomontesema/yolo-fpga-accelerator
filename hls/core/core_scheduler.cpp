@@ -15,7 +15,8 @@ void intra_pingpong_wrapper(IO_Dtype *Input, IO_Dtype *Weight, IO_Dtype output_b
                             IO_Dtype input_buffer0[Tn][OnChipIB_Height][OnChipIB_Width], IO_Dtype input_buffer1[Tn][OnChipIB_Height][OnChipIB_Width],
                             int IFM_num,int Input_w,int IW_align_256b,int Input_h,int OFM_num,int Ksize,int Kstride,
                             int TMP_R,int TMP_C,int TMP_M,int TM_MIN,int TR_MIN,int TC_MIN,int TN,int TRow,int TCol,int Padding,
-                            int IHxIW,int KxK,int IFM_numxKxK,int LayerType,int TM,int TMP_X_next[1],int TX_MIN_next[1],bool pingpongx,bool input_flag,bool process_flag)
+                            int IHxIW,int KxK,int IFM_numxKxK,int LayerType,int TM,int TMP_X_next[1],int TX_MIN_next[1],bool pingpongx,bool input_flag,bool process_flag,
+                            int Qw, int Qa_in, int Qa_out, int Qb)
 {
     static IO_Dtype weight_buffer0[Tm][Tn][K][K];
 HLS_PRAGMA(HLS ARRAY_PARTITION variable=weight_buffer0 complete dim=1)
@@ -48,13 +49,13 @@ DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=2048)
             {
                 copy_input_weight(Input,Weight,IFM_num,Input_w,IW_align_256b,Input_h,Ksize,Kstride,TMP_R,TMP_C,TMP_M, n,
                     TM_MIN,TN,TRow,TCol,Padding,input_buffer1,weight_buffer1, n1, n < IFM_num,1,(TMP_M==0)&&(n==0),IHxIW,KxK,IFM_numxKxK,LayerType);
-                compute(input_buffer0,output_buffer,weight_buffer0,beta_buffer, n0,Ksize,Kstride,TMP_M,TM_MIN,TR_MIN,TC_MIN, n!=0);
+                compute(input_buffer0,output_buffer,weight_buffer0,beta_buffer, n0,Ksize,Kstride,TMP_M,TM_MIN,TR_MIN,TC_MIN, n!=0, Qw, Qa_in, Qa_out, Qb);
                 pingpong = 0;
             }else
             {
                 copy_input_weight(Input,Weight,IFM_num,Input_w,IW_align_256b,Input_h,Ksize,Kstride,TMP_R,TMP_C,TMP_M, n,
                     TM_MIN,TN,TRow,TCol,Padding,input_buffer0,weight_buffer0, n0, n < IFM_num,1,(TMP_M==0)&&(n==0),IHxIW,KxK,IFM_numxKxK,LayerType);
-                compute(input_buffer1,output_buffer,weight_buffer1,beta_buffer, n1,Ksize,Kstride,TMP_M,TM_MIN,TR_MIN,TC_MIN, n!=0);
+                compute(input_buffer1,output_buffer,weight_buffer1,beta_buffer, n1,Ksize,Kstride,TMP_M,TM_MIN,TR_MIN,TC_MIN, n!=0, Qw, Qa_in, Qa_out, Qb);
                 pingpong = 1;
             }
         }

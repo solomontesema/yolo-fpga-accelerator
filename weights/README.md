@@ -49,9 +49,11 @@ After running the extractor, copy or link the generated `weights.bin` and `bias.
 In the same `nn-weight-extractor` repo, follow the int16 quantization/export steps:
 ```
 cd weights/nn-weight-extractor
-# Follow the README section for int16 export:
+# Follow the README section for int16 export (activation-calibrated):
 # - Generate weight_int16.bin and bias_int16.bin
-# - Generate per-layer Q tables (weight_int16_Q.bin, bias_int16_Q.bin)
+# - Generate per-layer Q tables: weight_int16_Q.bin, bias_int16_Q.bin
+# - Generate activation Q table: iofm_Q.bin (computed from a calibration set)
+#   * Provide at least one representative image; more is better for coverage.
 ```
 
 Place the generated int16 binaries alongside the fp32 ones in this `weights/` directory.
@@ -142,7 +144,8 @@ Reorganized version of weights.bin optimized for tiled execution and hardware ac
 ```bash
 rm weights/weights_reorg.bin
 make gen
-./yolov2_weight_gen
+./yolov2_weight_gen      # fp32
+./yolov2_weight_gen --precision int16   # int16 path
 ```
 
 ### Memory Errors During Loading

@@ -26,7 +26,8 @@ void YOLO2_FPGA(IO_Dtype *Input, IO_Dtype *Output, IO_Dtype *Weight, IO_Dtype *B
                 int Ksize, int Kstride,
                 int Input_w, int Input_h, int Output_w, int Output_h, int Padding, bool IsNL, bool IsBN,
                 int TM, int TN, int TR, int TC,
-                int OFM_num_bound, int mLoopsxTM, int mLoops_a1xTM, int LayerType)
+                int OFM_num_bound, int mLoopsxTM, int mLoops_a1xTM, int LayerType,
+                int Qw, int Qa_in, int Qa_out, int Qb)
 {
 HLS_PRAGMA(HLS INTERFACE m_axi depth=512 port=Input    offset=slave bundle=DATA_BUS num_read_outstanding=1 num_write_outstanding=1 max_read_burst_length=64 max_write_burst_length=64)
 HLS_PRAGMA(HLS INTERFACE m_axi depth=512 port=Output    offset=slave bundle=DATA_BUS num_read_outstanding=1 num_write_outstanding=1 max_read_burst_length=64 max_write_burst_length=64)
@@ -135,7 +136,8 @@ DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=2048)
                 {
                     intra_pingpong_wrapper(Input,Weight,output_buffer1,beta_buffer,input_buffer0,input_buffer1,
                                     IFM_num, Input_w, IW_align_256b, Input_h, OFM_num, Ksize, Kstride,
-                                    r, c, m, TM_MIN, TR_MIN, TC_MIN, TN, TRow, TCol, Padding,IHxIW,KxK,IFM_numxKxK,LayerType,TM, m1,TM_MIN1, pingpongm, input_flag, process_flag);
+                                    r, c, m, TM_MIN, TR_MIN, TC_MIN, TN, TRow, TCol, Padding,IHxIW,KxK,IFM_numxKxK,LayerType,TM, m1,TM_MIN1, pingpongm, input_flag, process_flag,
+                                    Qw, Qa_in, Qa_out, Qb);
 
                     write_back_output_reorg(output_buffer,Output, r, c, m0[0],OW_align_256b,Output_h, TM_MIN0[0], TR_MIN, TC_MIN, OHxOW, IsNL, write_flag);
                     pingpongm = 1;
@@ -143,7 +145,8 @@ DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=2048)
                 {
                     intra_pingpong_wrapper(Input,Weight,output_buffer,beta_buffer,input_buffer0,input_buffer1,
                                     IFM_num, Input_w, IW_align_256b, Input_h, OFM_num, Ksize, Kstride,
-                                    r, c, m, TM_MIN, TR_MIN, TC_MIN, TN, TRow, TCol, Padding,IHxIW,KxK,IFM_numxKxK,LayerType,TM, m0,TM_MIN0, pingpongm, input_flag, process_flag);
+                                    r, c, m, TM_MIN, TR_MIN, TC_MIN, TN, TRow, TCol, Padding,IHxIW,KxK,IFM_numxKxK,LayerType,TM, m0,TM_MIN0, pingpongm, input_flag, process_flag,
+                                    Qw, Qa_in, Qa_out, Qb);
 
                     write_back_output_reorg(output_buffer1,Output, r, c, m1[0],OW_align_256b,Output_h, TM_MIN1[0], TR_MIN, TC_MIN, OHxOW, IsNL, write_flag);
                     pingpongm = 0;

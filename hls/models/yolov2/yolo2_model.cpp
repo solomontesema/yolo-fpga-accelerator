@@ -123,7 +123,9 @@ std::vector<T> read_binary(const std::string &path) {
 struct WeightsPack {
     std::vector<IO_Dtype> weights;
     std::vector<IO_Dtype> bias;
-    std::vector<int> act_q; // per-layer activation Q (iofm_Q)
+    std::vector<int> weight_q; // per-layer weight Q
+    std::vector<int> bias_q;   // per-layer bias Q
+    std::vector<int> act_q;    // per-layer activation Q (iofm_Q)
 };
 
 WeightsPack load_weights(const network *net, Precision precision) {
@@ -145,7 +147,7 @@ WeightsPack load_weights(const network *net, Precision precision) {
         if (b.size() < expected_b) throw std::runtime_error("bias file too small");
         std::vector<IO_Dtype> wbuf(w.begin(), w.begin() + expected_w);
         std::vector<IO_Dtype> bbuf(b.begin(), b.begin() + expected_b);
-        return {std::move(wbuf), std::move(bbuf), {}};
+        return {std::move(wbuf), std::move(bbuf), {}, {}, {}};
     } else {
         auto w = read_binary<int16_t>("weights/weights_reorg_int16.bin");
         auto b = read_binary<int16_t>("weights/bias_int16.bin");
@@ -169,34 +171,43 @@ WeightsPack load_weights(const network *net, Precision precision) {
         std::vector<IO_Dtype> wbuf(expected_w);
         std::vector<IO_Dtype> bbuf(expected_b);
 
-        size_t woff = 0;
-        size_t boff = 0;
+        size_t w_file_off = 0;
+        size_t w_out_off = 0;
+        size_t b_file_off = 0;
+        size_t b_out_off = 0;
         for (int li = 0; li < conv_layers; ++li) {
             const int wlen = cfg.weight_offsets[li];
             const int blen = cfg.beta_offsets[li];
-            const float w_scale = std::ldexp(1.0f, -wQ[li]);
-            const float b_scale = std::ldexp(1.0f, -bQ[li]);
 
-            if (woff + wlen > w.size()) throw std::runtime_error("int16 weight truncated at layer " + std::to_string(li));
-            if (boff + blen > b.size()) throw std::runtime_error("int16 bias truncated at layer " + std::to_string(li));
+            if (w_file_off + wlen > w.size()) throw std::runtime_error("int16 weight truncated at layer " + std::to_string(li));
+            if (b_out_off + blen > bbuf.size()) throw std::runtime_error("int16 bias output buffer overflow at layer " + std::to_string(li));
+            if (b_file_off + blen > b.size()) throw std::runtime_error("int16 bias truncated at layer " + std::to_string(li));
 
-            for (int i = 0; i < wlen; ++i) {
-                wbuf[woff + i] = static_cast<IO_Dtype>(static_cast<float>(w[woff + i]) * w_scale);
-            }
-            for (int i = 0; i < blen; ++i) {
-                bbuf[boff + i] = static_cast<IO_Dtype>(static_cast<float>(b[boff + i]) * b_scale);
-            }
+            std::copy_n(w.data() + w_file_off, wlen, wbuf.data() + w_out_off);
+            std::copy_n(b.data() + b_file_off, blen, bbuf.data() + b_out_off);
 
-            woff += wlen;
-            boff += blen;
+            // Handle per-layer padding inserted during quantization for odd counts.
+            const int wpad = (wlen & 0x1) ? 1 : 0;
+            const int bpad = (blen & 0x1) ? 1 : 0;
+
+            w_file_off += wlen + wpad;
+            w_out_off  += wlen;
+            b_file_off += blen + bpad;
+            b_out_off  += blen;
         }
-        return {std::move(wbuf), std::move(bbuf), std::move(act_q)};
+        return {std::move(wbuf), std::move(bbuf), std::move(wQ), std::move(bQ), std::move(act_q)};
     }
 }
 
-void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
+void yolov2_hls_ps(network *net, const float *input, Precision precision)
 {
     const ModelConfig &cfg = yolo2_model_config();
+
+#ifdef INT16_MODE
+    if (precision == Precision::FP32) {
+        throw std::runtime_error("FP32 precision requested while INT16_MODE is enabled. Rebuild without INT16_MODE for FP32.");
+    }
+#endif
 
     WeightsPack wpack = load_weights(net, precision);
     IO_Dtype *Weight_buf = wpack.weights.data();
@@ -213,20 +224,31 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
     IO_Dtype* tmp_ptr_f0 = nullptr;
     generate_iofm_offset( in_ptr, out_ptr, Memory_buf, net, cfg);
 
-    memcpy(in_ptr[0], input, 416*416*3*sizeof(IO_Dtype));//416x416x3 input_pic
-
-    // If activation Q table is available for int16, quantize input to simulate fixed-point range.
-    if (precision == Precision::INT16 && !wpack.act_q.empty()) {
-        const int q_in = wpack.act_q[0];
+    const int input_elems = 416*416*3;
+    std::vector<IO_Dtype> input_q;
+    const IO_Dtype *input_data = nullptr;
+    if (precision == Precision::INT16) {
+        if (wpack.act_q.empty()) {
+            throw std::runtime_error("Activation Q table (iofm_Q.bin) is required for int16 inference.");
+        }
+        const int q_in = wpack.act_q.front();
         const float scale = std::ldexp(1.0f, q_in);
-        for (int idx = 0; idx < 416*416*3; ++idx) {
-            float v = static_cast<float>(in_ptr[0][idx]) * scale;
+        input_q.resize(input_elems);
+        for (int idx = 0; idx < input_elems; ++idx) {
+            float v = input[idx] * scale;
             if (v > 32767.f) v = 32767.f;
             if (v < -32768.f) v = -32768.f;
-            int16_t q = static_cast<int16_t>(std::lrintf(v));
-            in_ptr[0][idx] = static_cast<IO_Dtype>(static_cast<float>(q) * std::ldexp(1.0f, -q_in));
+            int64_t q = static_cast<int64_t>(std::llround(v));
+            if (q > 32767) q = 32767;
+            if (q < -32768) q = -32768;
+            input_q[idx] = static_cast<IO_Dtype>(q);
         }
+        input_data = input_q.data();
+    } else {
+        input_data = reinterpret_cast<const IO_Dtype *>(input);
     }
+
+    memcpy(in_ptr[0], input_data, input_elems*sizeof(IO_Dtype));//416x416x3 input_pic
 
     const int region_len = 13*16*425;
     std::vector<IO_Dtype> region_buf(region_len, 0);
@@ -238,13 +260,16 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
     int TR,TC,TM,TN;
     int output_w,output_h;
     int mLoops;
+    int current_Qa = (!wpack.act_q.empty()) ? wpack.act_q.front() : 0;
+    int route24_q = 0;
+    int pending_route_q = -1;
 
     for(int i = 0; i < net->n; ++i)
     {
         layer l = net->layers[i];
         switch(l.type)
         {
-            case CONVOLUTIONAL:
+            case CONVOLUTIONAL: {
                 output_w = (l.w - l.size + 2*l.pad)/l.stride + 1;
                 output_h = (l.h - l.size + 2*l.pad)/l.stride + 1;
 
@@ -256,16 +281,36 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
                 TN = std::min(l.c,Tn);
                 mLoops = (int)ceil(((float)l.n)/TM);
 
+                int Qw = 0, Qb = 0, Qa_in = 0, Qa_out = 0;
+                if (precision == Precision::INT16) {
+                    const size_t act_entries = wpack.act_q.size();
+                    Qa_in = (offset_index < static_cast<int>(act_entries)) ? wpack.act_q[offset_index] : current_Qa;
+                    Qa_out = (offset_index + 1 < static_cast<int>(act_entries)) ? wpack.act_q[offset_index + 1] : Qa_in;
+                    Qw = (offset_index < static_cast<int>(wpack.weight_q.size())) ? wpack.weight_q[offset_index] : 0;
+                    Qb = (offset_index < static_cast<int>(wpack.bias_q.size())) ? wpack.bias_q[offset_index] : 0;
+                    if (pending_route_q >= 0) {
+                        Qa_in = pending_route_q;
+                    }
+                }
                 YOLO2_FPGA(in_ptr[i],out_ptr[i],Weight_buf+woffset,Beta_buf+boffset,
                     l.c,l.n,l.size,
                     l.stride,l.w,l.h,output_w, output_h, l.pad,l.activation==LEAKY?1:0,l.batch_normalize?1:0,
-                    TM,TN,TR,TC, (mLoops + 1)*TM, mLoops*TM, (mLoops + 1)*TM, 0);
+                    TM,TN,TR,TC, (mLoops + 1)*TM, mLoops*TM, (mLoops + 1)*TM, 0,
+                    Qw, Qa_in, Qa_out, Qb);
 
                 woffset += cfg.weight_offsets[offset_index];
                 boffset += cfg.beta_offsets[offset_index];
+                if (precision == Precision::INT16) {
+                    current_Qa = Qa_out;
+                    if (i == 24) {
+                        route24_q = current_Qa; // save skip connection scale before reorg/route
+                    }
+                    pending_route_q = -1;
+                }
                 offset_index++;
 
                 break;
+            }
             case MAXPOOL:
                 output_w = l.out_h;
                 output_h = l.out_w;
@@ -279,7 +324,8 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
                 mLoops = (int)ceil(((float)l.c)/TM);
 
                 YOLO2_FPGA(in_ptr[i],out_ptr[i],NULL,NULL,l.c,l.c,
-                    l.size,l.stride,l.w,l.h, output_w, output_h, l.pad,0,0,TM,0,TR,TC, (mLoops + 2)*TM, mLoops*TM, (mLoops + 1)*TM, 1);
+                    l.size,l.stride,l.w,l.h, output_w, output_h, l.pad,0,0,TM,0,TR,TC, (mLoops + 2)*TM, mLoops*TM, (mLoops + 1)*TM, 1,
+                    0,0,0,0);
 
                 break;
             case REORG:
@@ -302,6 +348,29 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
                 memset(region_buf.data(), 0,  13*16*256*sizeof(IO_Dtype));
                 for(int k = 0; k<13*256; k++)
                     memcpy((IO_Dtype *)(tmp_ptr_f0 + k*16), (IO_Dtype *)(region_buf2.data() + k*13), 13*sizeof(IO_Dtype));
+
+                if (precision == Precision::INT16 && route24_q > 0) {
+                    // Align the reorg branch scale with the skip connection branch before concatenation.
+                    const int target_q = std::min(route24_q, current_Qa);
+                    const int shift = current_Qa - target_q;
+                    if (shift != 0) {
+                        const int total = 13 * 16 * 256;
+                        for (int idx = 0; idx < total; ++idx) {
+                            int32_t v = static_cast<int32_t>(tmp_ptr_f0[idx]);
+                            if (shift > 0) {
+                                v >>= shift;
+                            } else {
+                                v <<= -shift;
+                            }
+                            if (v > 32767) v = 32767;
+                            if (v < -32768) v = -32768;
+                            tmp_ptr_f0[idx] = static_cast<IO_Dtype>(v);
+                        }
+                        current_Qa = target_q;
+                    }
+                    pending_route_q = current_Qa;
+                }
+
                 memcpy(out_ptr[i], tmp_ptr_f0, 13*16*256*sizeof(IO_Dtype));
 
                 break;
@@ -317,8 +386,7 @@ void yolov2_hls_ps(network *net, IO_Dtype *input, Precision precision)
                     }
                 std::vector<float> region_f(region_buf.size());
                 if (precision == Precision::INT16 && !wpack.act_q.empty()) {
-                    // Use last conv layer activation Q (conv30 index conv_layers-1)
-                    const int q_out = wpack.act_q.back();
+                    const int q_out = current_Qa;
                     const float scale = std::ldexp(1.0f, -q_out);
                     for (size_t t = 0; t < region_buf.size(); ++t) {
                         region_f[t] = static_cast<float>(region_buf[t]) * scale;
