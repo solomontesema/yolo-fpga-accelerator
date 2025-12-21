@@ -2,7 +2,6 @@
 
 #include "params.hpp"
 #include "types.hpp"
-#include <core/yolo.h>
 #include <models/yolov2/yolov2_acc_pragmas.h>
 
 // Input feature map load helpers

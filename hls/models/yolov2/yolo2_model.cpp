@@ -17,6 +17,11 @@
 #include "model_config.hpp"
 #include <core/precision.hpp>
 
+#ifndef __SYNTHESIS__
+// Include full definitions for CPU build (not needed for HLS synthesis)
+#include <core/yolo.h>
+#endif
+
 #include <vector>
 #include <string>
 #include <stdexcept>

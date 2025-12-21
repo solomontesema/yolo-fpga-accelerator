@@ -12,8 +12,11 @@ constexpr std::array<int, 32> kYolo2BetaOffsets = {32, 64, 128, 64, 128, 256, 12
 
 const ModelConfig &yolo2_model_config()
 {
+    // mem_len governs the external DRAM scratch allocation used by the host/TB.
+    // Must match HLS Input depth exactly: 416*416*32 + 208*208*32 = 6,922,240 words
+    // This ensures wrapc writes stay in-bounds during co-simulation.
     static const ModelConfig cfg{
-        /*mem_len=*/(416*416*32 + 208*208*32),
+        /*mem_len=*/6922240,
         /*route16_len=*/(26*32*512),
         /*conv27_len=*/(13*16*256),
         /*conv24_len=*/(13*16*1024),

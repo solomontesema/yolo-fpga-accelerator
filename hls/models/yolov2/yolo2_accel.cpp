@@ -29,10 +29,21 @@ void YOLO2_FPGA(IO_Dtype *Input, IO_Dtype *Output, IO_Dtype *Weight, IO_Dtype *B
                 int OFM_num_bound, int mLoopsxTM, int mLoops_a1xTM, int LayerType,
                 int Qw, int Qa_in, int Qa_out, int Qb)
 {
-HLS_PRAGMA(HLS INTERFACE m_axi depth=512 port=Input    offset=slave bundle=DATA_BUS num_read_outstanding=1 num_write_outstanding=1 max_read_burst_length=64 max_write_burst_length=64)
-HLS_PRAGMA(HLS INTERFACE m_axi depth=512 port=Output    offset=slave bundle=DATA_BUS num_read_outstanding=1 num_write_outstanding=1 max_read_burst_length=64 max_write_burst_length=64)
-HLS_PRAGMA(HLS INTERFACE m_axi depth=512 port=Weight offset=slave bundle=DATA_BUS1 num_read_outstanding=1 max_read_burst_length=128)
-HLS_PRAGMA(HLS INTERFACE m_axi depth=512 port=Beta   offset=slave bundle=DATA_BUS1 num_read_outstanding=1 max_read_burst_length=128)
+// Depth values for co-simulation (in 32-bit words):
+// Input: max 416*416*3 = 519,168 words (~2MB)
+// Output: max 416*416*32 = 5,537,792 words (~22MB for early layers)
+// Weight: max ~50M words (~200MB total)
+// Beta: max ~10K words (~40KB)
+// Using conservative values that match actual usage
+// Depths match actual maxima (32-bit words), no extra margin:
+// Input: mem_len = 416*416*32 + 208*208*32 = 6,922,240 words
+// Output: layer0 = 416*416*32 = 5,537,792 words
+// Weight: weights_reorg.bin = 50,941,792 words
+// Beta: bias.bin = 10,761 words
+HLS_PRAGMA(HLS INTERFACE m_axi depth=6922240  port=Input    offset=slave bundle=DATA_BUS_IN  num_read_outstanding=1 num_write_outstanding=1 max_read_burst_length=64 max_write_burst_length=64)
+HLS_PRAGMA(HLS INTERFACE m_axi depth=5537792  port=Output   offset=slave bundle=DATA_BUS_OUT num_read_outstanding=1 num_write_outstanding=1 max_read_burst_length=64 max_write_burst_length=64)
+HLS_PRAGMA(HLS INTERFACE m_axi depth=50941792 port=Weight  offset=slave bundle=DATA_BUS1    num_read_outstanding=1 max_read_burst_length=128)
+HLS_PRAGMA(HLS INTERFACE m_axi depth=10761    port=Beta    offset=slave bundle=DATA_BUS1    num_read_outstanding=1 max_read_burst_length=128)
 
 HLS_PRAGMA(HLS INTERFACE s_axilite register port=return bundle=CTRL_BUS)
 HLS_PRAGMA(HLS INTERFACE s_axilite register port=IFM_num bundle=CTRL_BUS)

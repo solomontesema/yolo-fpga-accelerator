@@ -2,6 +2,19 @@
 #include <cstdlib>
 #include <cstring>
 
+// Disable SIMD to avoid compilation issues with Vitis HLS compiler
+#define STBI_NO_SIMD
+
+// For CPU builds: stb_image_implementation.cpp provides the implementations
+// For HLS co-simulation: we need to define implementations here since 
+// stb_image_implementation.cpp is not included in the testbench
+// Only define implementations if STB_IMAGE_CPU_BUILD is not defined
+// (CPU builds define this via Makefile to prevent double definitions)
+#ifndef STB_IMAGE_CPU_BUILD
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#endif
+
 #include <core/yolo.h>
 
 image make_empty_image(int w, int h, int c)

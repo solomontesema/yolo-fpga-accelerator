@@ -83,7 +83,7 @@ test: $(BUILD_DIR)
 	@echo "$(COLOR_BLUE)Generating hardware parameters...$(COLOR_RESET)"
 	@cd . && python3 $(HW_PARAMS_SCRIPT)
 	@echo "$(COLOR_BLUE)Building detection executable...$(COLOR_RESET)"
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(TARGET) $(MAIN_SRC) $(CORE_SRCS) $(HLS_SRCS) $(EXTRA_SRCS) -D REORG_TEST $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -DSTB_IMAGE_CPU_BUILD -o $(TARGET) $(MAIN_SRC) $(CORE_SRCS) $(HLS_SRCS) $(EXTRA_SRCS) -D REORG_TEST $(LDFLAGS)
 	@echo "$(COLOR_GREEN)Detection build complete. Run ./$(TARGET) [image_path]$(COLOR_RESET)"
 
 # Build the int16 detection application
@@ -92,7 +92,7 @@ test-int16: $(BUILD_DIR)
 	@echo "$(COLOR_BLUE)Generating hardware parameters...$(COLOR_RESET)"
 	@cd . && python3 $(HW_PARAMS_SCRIPT)
 	@echo "$(COLOR_BLUE)Building int16 detection executable...$(COLOR_RESET)"
-	$(CXX) $(CXXFLAGS) -DINT16_MODE $(INCLUDES) -o $(TARGET) $(MAIN_SRC) $(CORE_SRCS) $(HLS_SRCS) $(EXTRA_SRCS) -D REORG_TEST $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -DINT16_MODE -DSTB_IMAGE_CPU_BUILD $(INCLUDES) -o $(TARGET) $(MAIN_SRC) $(CORE_SRCS) $(HLS_SRCS) $(EXTRA_SRCS) -D REORG_TEST $(LDFLAGS)
 	@echo "$(COLOR_GREEN)Int16 detection build complete. Run ./$(TARGET) --precision int16 [image_path]$(COLOR_RESET)"
 
 # Build with debug symbols

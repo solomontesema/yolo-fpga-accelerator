@@ -7,6 +7,7 @@ This project provides a modular C++/HLS implementation of YOLO for FPGA accelera
 - Structured host/HLS split: cfg parsing, math/activations, layer builders, and post-processing live in `src/`, while the accelerator top/scheduler/I/O/compute live in `hls/`.
 - Hardware-ready flow: `scripts/hw_params_gen.py` emits on-chip tiling constants, and `make gen` reorganizes weights for the accelerator.
 - Dual precision: fp32 is the baseline; int16 uses per-layer activation/weight/bias Q tables generated from calibrated activations.
+- Vitis HLS integration: Complete build scripts and co-simulation testbench for FPGA validation (see `vitis/README.md`).
 
 ## Quick Start
 ```bash
@@ -42,6 +43,7 @@ The detector saves a single annotated image; if `--output` is omitted it writes 
 - `src/models/yolov2/` — YOLOv2 CLI entry
 - `hls/core/` — accelerator I/O/compute/scheduler building blocks
 - `hls/models/yolov2/` — YOLOv2 accelerator wrapper and model descriptor
+- `vitis/` — Vitis HLS build scripts and co-simulation testbench (see `vitis/README.md`)
 - `scripts/` — hardware parameter generator
 - `config/`, `examples/`, `weights/` — model config, sample images, and weight blobs
 
@@ -59,3 +61,25 @@ The detector saves a single annotated image; if `--output` is omitted it writes 
   - `iofm_Q.bin` derived from activation ranges on a calibration set
 - Build with `make test-int16`
 - Run with `./yolov2_detect --precision int16 ...`
+
+## Vitis HLS Workflow
+
+The project includes complete Vitis HLS build scripts for FPGA validation:
+
+```bash
+# Recommended: FP32 build (skip co-simulation due to current SIGSEGV issues)
+HLS_RUN_COSIM=0 vitis-run --mode hls --tcl vitis/yolo2_cli.tcl
+
+# Recommended: INT16 build (skip co-simulation)
+HLS_RUN_COSIM=0 vitis-run --mode hls --tcl vitis/yolo2_int16_cli.tcl
+```
+
+The build scripts support:
+- C simulation validation
+- RTL synthesis
+- Co-simulation with full network inference (currently has stability issues)
+- IP export for Vivado integration
+
+**Note**: Co-simulation may encounter SIGSEGV with large memory allocations. It is recommended to skip co-simulation and proceed to IP export for Vivado integration.
+
+See `vitis/README.md` for detailed usage and configuration options.

@@ -54,3 +54,18 @@ __pycache__/
 
 # Log files
 *.log
+
+# Vitis HLS build outputs
+yolo2_fp32/
+yolo2_int16/
+.autopilot/
+*.zip
+
+# Co-simulation outputs
+cosim_output/
+
+# IDE workspace files
+_ide/
+
+# Temporary and reference files
+temp/

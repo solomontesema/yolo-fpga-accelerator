@@ -4,8 +4,6 @@
 
 #include "params.hpp"
 #include "types.hpp"
-#include <core/yolo.h>
-#include <core/precision.hpp>
 
 // Public accelerator entry points. These are host-callable simulation
 // shims that mirror the HLS design.
@@ -18,4 +16,9 @@ void YOLO2_FPGA(IO_Dtype *Input, IO_Dtype *Output, IO_Dtype *Weight, IO_Dtype *B
                 int mLoops_a1xTM, int LayerType,
                 int Qw, int Qa_in, int Qa_out, int Qb);
 
+#ifndef __SYNTHESIS__
+// Host-only helper (excluded from RTL synthesis)
+struct network;
+enum class Precision;
 void yolov2_hls_ps(network *net, const float *input, Precision precision);
+#endif
