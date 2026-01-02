@@ -1,0 +1,47 @@
+/*
+ * Device Tree Overlay for YOLOv2 FPGA Accelerator
+ * Target: Kria KV260 with Ubuntu 22.04
+ * 
+ * Compatible with xmutil loadapp mechanism
+ * This overlay follows the simpler approach of overlaying directly onto &amba
+ * which matches the original package creation script
+ */
+
+/dts-v1/;
+/plugin/;
+
+&fpga_full {
+    firmware-name = "yolov2_accel.bit.bin";
+};
+
+&amba {
+    /* YOLOv2 HLS Accelerator */
+    yolo2_accel: yolo2_accel@a0000000 {
+        compatible = "xlnx,yolo2-fpga-1.0", "generic-uio";
+        reg = <0x0 0xa0000000 0x0 0x1000>;
+    };
+    
+    /* AXI GPIO for Weight Q value */
+    axi_gpio_qw: gpio@a0010000 {
+        compatible = "xlnx,axi-gpio-2.0", "generic-uio";
+        reg = <0x0 0xa0010000 0x0 0x1000>;
+    };
+    
+    /* AXI GPIO for Input Activation Q value */
+    axi_gpio_qa_in: gpio@a0020000 {
+        compatible = "xlnx,axi-gpio-2.0", "generic-uio";
+        reg = <0x0 0xa0020000 0x0 0x1000>;
+    };
+    
+    /* AXI GPIO for Output Activation Q value */
+    axi_gpio_qa_out: gpio@a0030000 {
+        compatible = "xlnx,axi-gpio-2.0", "generic-uio";
+        reg = <0x0 0xa0030000 0x0 0x1000>;
+    };
+    
+    /* AXI GPIO for Bias Q value */
+    axi_gpio_qb: gpio@a0040000 {
+        compatible = "xlnx,axi-gpio-2.0", "generic-uio";
+        reg = <0x0 0xa0040000 0x0 0x1000>;
+    };
+};

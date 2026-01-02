@@ -30,6 +30,28 @@
 #include <cstdint>
 #include <type_traits>
 
+#ifndef __SYNTHESIS__
+static void dump_float_array_text(const char *path, const float *data, size_t count)
+{
+    if (!path || !path[0] || !data || count == 0) {
+        return;
+    }
+
+    FILE *fp = std::fopen(path, "w");
+    if (!fp) {
+        std::fprintf(stderr, "Warning: cannot open dump file %s\n", path);
+        return;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        std::fprintf(fp, "%.9g\n", data[i]);
+    }
+
+    std::fclose(fp);
+    std::printf("Dumped %zu floats to %s\n", count, path);
+}
+#endif
+
 namespace {
 void generate_iofm_offset(IO_Dtype* in_ptr[32], IO_Dtype* out_ptr[32], IO_Dtype *Memory_buf, network *net, const ModelConfig &cfg)
 {
@@ -401,6 +423,20 @@ void yolov2_hls_ps(network *net, const float *input, Precision precision)
                         region_f[t] = static_cast<float>(region_buf[t]);
                     }
                 }
+#ifndef __SYNTHESIS__
+                const char *disable_dumps = std::getenv("YOLO2_NO_DUMP");
+                const bool do_dump = !(disable_dumps && disable_dumps[0] && disable_dumps[0] != '0');
+                const char *dump_raw = std::getenv("YOLO2_DUMP_REGION_RAW_CPU");
+                if (!dump_raw || !dump_raw[0]) {
+                    dump_raw = std::getenv("YOLO2_DUMP_REGION_RAW");
+                }
+                if (!dump_raw || !dump_raw[0]) {
+                    dump_raw = "yolov2_region_raw_cpu.txt";
+                }
+                if (do_dump) {
+                    dump_float_array_text(dump_raw, region_f.data(), static_cast<size_t>(l.outputs));
+                }
+#endif
                 forward_region_layer(l, region_f.data());
                 break;
             }

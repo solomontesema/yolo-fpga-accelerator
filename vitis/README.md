@@ -131,6 +131,7 @@ The `yolo2_cosim_tb.cpp` testbench:
 - **Weight files**: See `weights/README.md` for weight file generation
 - **Test images**: Default test image at `examples/test_images/dog.jpg`
 - **Alphabet images**: For annotated output, requires `data/labels/` directory
+- **Target part (optional)**: override the HLS device part with `HLS_PART=<part>` (defaults to `xck26-sfvc784-2LV-c`)
 
 ## Expected Outputs
 
@@ -160,4 +161,3 @@ Common issues and solutions are documented in `COSIM_README.md`. Key points:
 - Memory allocations are optimized for AXI co-simulation compatibility
 - The testbench matches the CPU version behavior for validation consistency
 - C simulation provides functional validation without the memory constraints of co-simulation
-

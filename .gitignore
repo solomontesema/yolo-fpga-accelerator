@@ -69,3 +69,34 @@ _ide/
 
 # Temporary and reference files
 temp/
+
+# Vivado / Xilinx tool outputs
+.Xil/
+**/.Xil/
+*.jou
+*.str
+vivado/*.log
+vivado/*.jou
+vivado/yolov2_int16/
+
+# KV260 linux_app build outputs and runtime dumps
+linux_app/build/
+linux_app/yolo2_linux
+linux_app/test_accel
+linux_app/test_dma
+linux_app/test_pl_ddr
+linux_app/check_hp_clocks
+linux_app/yolov2_region_*_hw.txt
+linux_app/yolov2_region_*_proc_hw.txt
+
+# CPU/HW debug dumps (repo root)
+yolov2_region_*_cpu.txt
+yolov2_region_*_hw.txt
+
+# Local helper prompts / scratch
+AI_CONTINUATION_PROMPT*.md
+QUICK_CONTINUATION_PROMPT.md
+tmp/
+linux_app_backup/
+app/
+app_r5/

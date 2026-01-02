@@ -20,6 +20,7 @@
 #include <chrono>
 #include <fstream>
 #include <filesystem>
+#include <iomanip>
 
 #include <core/yolo.h>
 #include <core/precision.hpp>
@@ -38,6 +39,25 @@ struct AppConfig {
     enum class Backend { Hls, Cpu } backend = Backend::Hls;
     Precision precision = Precision::FP32;
 };
+
+void dump_float_array_text(const char *path, const float *data, size_t count) {
+    if (!path || !path[0] || !data || count == 0) {
+        return;
+    }
+
+    std::ofstream out(path);
+    if (!out) {
+        std::fprintf(stderr, "Warning: cannot open dump file %s\n", path);
+        return;
+    }
+
+    out << std::setprecision(9);
+    for (size_t i = 0; i < count; ++i) {
+        out << data[i] << '\n';
+    }
+
+    std::printf("Dumped %zu floats to %s\n", count, path);
+}
 
 void print_usage(const char *prog) {
     std::printf(
@@ -273,6 +293,17 @@ void run_detector(AppConfig cfg) {
     const auto end = std::chrono::high_resolution_clock::now();
     const double elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(end - start).count();
     std::printf("%s: Predicted in %.3f seconds.\n", cfg.input_path.c_str(), elapsed);
+
+    const char *disable_dumps = std::getenv("YOLO2_NO_DUMP");
+    const bool do_dump = !(disable_dumps && disable_dumps[0] && disable_dumps[0] != '0');
+    const char *dump_path = std::getenv("YOLO2_DUMP_REGION");
+    if (!dump_path || !dump_path[0]) {
+        dump_path = "yolov2_region_proc_cpu.txt";
+    }
+    if (do_dump) {
+        layer last = net_guard.ptr->layers[net_guard.ptr->n - 1];
+        dump_float_array_text(dump_path, last.output, static_cast<size_t>(last.outputs));
+    }
 
     int nboxes = 0;
     layer last = net_guard.ptr->layers[net_guard.ptr->n - 1];

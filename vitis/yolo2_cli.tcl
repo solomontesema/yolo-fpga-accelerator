@@ -10,7 +10,20 @@ set script_dir [file dirname [norm [info script]]]
 set proj_root  [norm [file join $script_dir ..]]
 
 set top        "YOLO2_FPGA"
-set part       "xczu5ev-sfvc784-1-i"
+# Target device part for HLS.
+#
+# Default matches the Vivado KV260/K26 SOM project part.
+# You can override at runtime:
+#   HLS_PART=<part> vitis-run --mode hls --tcl vitis/yolo2_cli.tcl
+#
+# If the default part is not installed/recognized in your Vivado/Vitis setup,
+# we fall back to a generic ZU5EV part string that commonly works.
+set part_default "xck26-sfvc784-2LV-c"
+set part_fallback "xczu5ev-sfvc784-1-i"
+set part $part_default
+if {[info exists ::env(HLS_PART)] && $::env(HLS_PART) ne ""} {
+  set part $::env(HLS_PART)
+}
 set clk_period 5.0
 
 # Use the full co-simulation testbench
@@ -38,7 +51,7 @@ set tb_support_files [list                               \
   [norm [file join $proj_root hls models yolov2 yolo2_model.cpp]]]
 
 proc build_project {proj_name} {
-  global top part clk_period design_files include_flags tb_file tb_support_files
+  global top part clk_period design_files include_flags tb_file tb_support_files part_fallback
 
   open_project -reset $proj_name
   set_top $top
@@ -54,7 +67,13 @@ proc build_project {proj_name} {
   }
 
   open_solution -reset solution1
-  set_part $part
+  if {[catch { set_part $part } err]} {
+    puts "WARNING: set_part '$part' failed: $err"
+    puts "WARNING: Falling back to '$part_fallback' (override with HLS_PART=... to silence this)."
+    set part $part_fallback
+    set_part $part
+  }
+  puts "Using HLS target part: $part"
   create_clock -period $clk_period -name default
 
   # CRITICAL: Set AXI depths BEFORE synthesis to ensure wrapc generation uses correct values

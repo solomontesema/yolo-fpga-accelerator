@@ -1,0 +1,79 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * Device Tree Overlay for YOLOv2 FPGA Accelerator
+ * 
+ * This overlay configures:
+ * 1. Reserved memory regions for DMA buffers
+ * 2. udmabuf devices for userspace access
+ * 
+ * To compile:
+ *   dtc -@ -O dtb -o yolo2_udmabuf.dtbo yolo2_udmabuf.dts
+ * 
+ * To load:
+ *   sudo mkdir -p /sys/kernel/config/device-tree/overlays/yolo2
+ *   sudo cp yolo2_udmabuf.dtbo /sys/kernel/config/device-tree/overlays/yolo2/dtbo
+ */
+
+/ {
+    fragment@0 {
+        target-path = "/";
+        
+        __overlay__ {
+            reserved-memory {
+                #address-cells = <2>;
+                #size-cells = <2>;
+                ranges;
+                
+                /* Weight buffer: 128MB at 0x50000000 */
+                yolo_weights: buffer@50000000 {
+                    compatible = "shared-dma-pool";
+                    reg = <0x0 0x50000000 0x0 0x8000000>;
+                    no-map;
+                };
+                
+                /* Bias buffer: 1MB at 0x58000000 */
+                yolo_bias: buffer@58000000 {
+                    compatible = "shared-dma-pool";
+                    reg = <0x0 0x58000000 0x0 0x100000>;
+                    no-map;
+                };
+                
+                /* Inference buffer: 64MB at 0x59000000 */
+                yolo_inference: buffer@59000000 {
+                    compatible = "shared-dma-pool";
+                    reg = <0x0 0x59000000 0x0 0x4000000>;
+                    no-map;
+                };
+            };
+            
+            /* udmabuf device for weights */
+            udmabuf_weights {
+                compatible = "ikwzm,u-dma-buf";
+                device-name = "udmabuf0";
+                size = <0x8000000>;  /* 128MB */
+                memory-region = <&yolo_weights>;
+                sync-mode = <1>;     /* Sync for device */
+            };
+            
+            /* udmabuf device for bias */
+            udmabuf_bias {
+                compatible = "ikwzm,u-dma-buf";
+                device-name = "udmabuf1";
+                size = <0x100000>;   /* 1MB */
+                memory-region = <&yolo_bias>;
+                sync-mode = <1>;
+            };
+            
+            /* udmabuf device for inference */
+            udmabuf_inference {
+                compatible = "ikwzm,u-dma-buf";
+                device-name = "udmabuf2";
+                size = <0x4000000>;  /* 64MB */
+                memory-region = <&yolo_inference>;
+                sync-mode = <1>;
+            };
+        };
+    };
+};
