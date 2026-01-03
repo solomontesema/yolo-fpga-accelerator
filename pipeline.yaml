@@ -1,0 +1,137 @@
+# KV260 YOLOv2 INT16 end-to-end pipeline configuration
+#
+# This file is meant to be human-edited. It drives `scripts/run_pipeline.py`.
+#
+# Tip:
+#   - If you don't want your local edits to show up in `git status`, copy this file to
+#     `pipeline.local.yaml` and run with `--config pipeline.local.yaml`.
+
+pipeline:
+  # Stages run in this exact order. Remove/comment any stage you don't want.
+  stages:
+    - host_sanity # stage 1: host sanity checks
+    - host_quickstart # stage 2: host-side smoke test
+    - hls_ip # stage 3: build/export HLS IP
+    - vivado_build # stage 4: Vivado bitstream/XSA build
+    - package_firmware # stage 5: package bitstream + dtbo + shell.json
+    - deploy_kv260 # stage 6: deploy to KV260 board
+    - run_kv260 # stage 7: run inference on KV260 board
+
+  # Optional: limit execution to a stage range (inclusive). Use stage names.
+  from: null
+  to: null
+
+  # Print commands without running them.
+  dry_run: false
+
+env:
+  # Optional: Xilinx settings scripts to source for each tool.
+  # Leave empty if your environment is already configured (PATH, etc).
+  vivado_settings: ""
+  vitis_settings: ""
+  xsct_settings: ""
+
+host_quickstart:
+  # Host-side smoke test (before FPGA): build + weight reorg + run detection.
+  fp32:
+    enabled: true
+    thresh: 0.50
+    nms: 0.45
+    input_image: "examples/test_images/dog.jpg"
+    output_dir: "predictions"
+  int16:
+    enabled: true
+    thresh: 0.50
+    nms: 0.45
+    input_image: "examples/test_images/dog.jpg"
+    output_dir: "predictions"
+
+hls_ip:
+  # Build/export the HLS IP repo used by Vivado (INT16).
+  tcl: "vitis/yolo2_int16_cli.tcl"
+  env:
+    HLS_RUN_COSIM: "0"
+
+vivado_build:
+  # Non-GUI Vivado build from exported BD TCL (bitstream + XSA).
+  bd_tcl: "vivado/bd/kv260_yolov2_int16_bd.tcl"
+  proj_dir: "vivado/yolov2_int16"
+  xsa: "vivado/yolov2_int16/design_1_wrapper.xsa"
+  ip_repo: "yolo2_int16/solution1/impl/ip"
+  jobs: 8
+
+package_firmware:
+  # Creates/updates linux_app/accel_package/yolov2_accel/ (bit.bin + dtbo + shell.json)
+  script: "linux_app/accel_package/create_accel_package.sh"
+  accel_name: "yolov2_accel"
+  output_dir: "linux_app/accel_package/yolov2_accel"
+  dtbo:
+    # One of: manual, xsct, skip
+    #
+    # - manual: (best-effort) keep/use a manual overlay; may not apply cleanly on all KV260 images
+    # - xsct:   generate DTBO from XSA using XSCT/createdts (recommended; matches AMD docs)
+    # - skip:   do not touch dtbo (you manage it yourself)
+    method: "xsct"
+    xsct:
+      # The pipeline runs:
+      #   xsct tmp/xsct_createdts_<accel_name>.tcl
+      #
+      # It then looks for:
+      #   <out_dir>/<platform_name>/psu_cortexa53_0/device_tree_domain/bsp/pl.dtbo
+      # or compiles `pl.dtsi → pl.dtbo` via `dtc` if needed.
+      #
+      # If xsct is not available but a DTBO already exists in the package folder, the pipeline keeps using it.
+      out_dir: "tmp/dts_output"
+      platform_name: "yolov2_kv260"
+      git_branch: "xlnx_rel_v2024.2"
+      compile: true
+
+deploy_kv260:
+  ssh:
+    host: "kria"
+    user: "ubuntu"
+    port: 22
+    identity_file: ""     # optional: "~/.ssh/id_ed25519"
+    extra_opts: []        # optional: ["-o", "StrictHostKeyChecking=no"]
+    # If your KV260 prompts for a sudo password, the pipeline will auto-add `ssh -tt` when it
+    # detects `sudo` in a remote command. You can force/disable that behavior here.
+    auto_tty_for_sudo: true
+    allocate_tty: false
+  remote:
+    home: "/home/ubuntu"
+    linux_app_dir: "/home/ubuntu/linux_app"
+    accel_dir: "/home/ubuntu/yolov2_accel"
+    weights_dir: "/home/ubuntu/weights"
+    config_dir: "/home/ubuntu/config"
+    images_dir: "/home/ubuntu/test_images"
+  copy:
+    linux_app: true
+    accel_package: true
+    weights: true
+    config: true
+    test_image: true
+  build_linux_app: true
+  files:
+    weights:
+      - "weights/weights_reorg_int16.bin"
+      - "weights/bias_int16.bin"
+      - "weights/weight_int16_Q.bin"
+      - "weights/bias_int16_Q.bin"
+      - "weights/iofm_Q.bin"
+    config:
+      - "config/yolov2.cfg"
+      - "config/coco.names"
+    test_image: "examples/test_images/dog.jpg"
+
+run_kv260:
+  # Runs the board-side helper that loads the overlay + udmabuf + runs inference.
+  #
+  # The args are passed directly to linux_app/start_yolo.sh on the KV260.
+  #
+  # `start_yolo.sh` forwards these `YOLO2_*` variables through `sudo env ...` to `yolo2_linux`.
+  env:
+    YOLO2_VERBOSE: "3"
+    YOLO2_NO_DUMP: "1"
+  args:
+    - "-i"
+    - "/home/ubuntu/test_images/dog.jpg"

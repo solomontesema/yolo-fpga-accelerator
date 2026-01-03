@@ -8,17 +8,31 @@ This document describes how to generate the device tree overlay (DTBO) from your
 - Vitis/XSCT tools installed
 - Access to the XSA file: `vivado/yolov2_int16/design_1_wrapper.xsa`
 
+## Pipeline shortcut (recommended)
+
+If you are using the repo’s staged pipeline runner, it can run this XSCT flow for you when `package_firmware.dtbo.method: xsct`:
+
+```bash
+python3 scripts/run_pipeline.py --config pipeline.local.yaml --from package_firmware --to package_firmware
+```
+
 ## Method 1: Using XSCT (Xilinx Software Command-Line Tool)
 
 ### Step 1: Launch XSCT
 
 ```bash
 # Source Vitis environment
-source /tools/Xilinx/Vitis/2022.1/settings64.sh
-# Or adjust path to your Vitis installation
+source /tools/Xilinx/Vitis/2024.2/settings64.sh
+# Or adjust the path to your Vitis installation
 
 # Start XSCT
 xsct
+```
+
+Tip (headless machines / invalid `$DISPLAY`):
+
+```bash
+xsct -nodisp
 ```
 
 ### Step 2: Generate Device Tree from XSA
@@ -26,14 +40,11 @@ xsct
 Within the XSCT shell:
 
 ```tcl
-# Open hardware design
-hsi::open_hw_design /path/to/vivado/yolov2_int16/design_1_wrapper.xsa
-
-# Generate device tree overlay
+# Generate device tree overlay (createdts opens the XSA internally)
 createdts -hw /path/to/vivado/yolov2_int16/design_1_wrapper.xsa \
           -zocl \
           -platform-name yolov2_kv260 \
-          -git-branch xlnx_rel_v2022.1 \
+          -git-branch xlnx_rel_v2024.1 \
           -overlay \
           -compile \
           -out /tmp/dts_output
@@ -48,7 +59,10 @@ cd /tmp/dts_output/yolov2_kv260/psu_cortexa53_0/device_tree_domain/bsp
 # Compile DTSI to DTBO
 dtc -@ -O dtb -o pl.dtbo pl.dtsi
 
-# Copy to firmware directory
+# Copy into the xmutil package folder (recommended)
+cp pl.dtbo <repo_root>/linux_app/accel_package/yolov2_accel/yolov2_accel.dtbo
+
+# Or copy directly to the firmware directory on the KV260 (if you prefer)
 sudo cp pl.dtbo /lib/firmware/xilinx/yolov2_accel/
 ```
 
@@ -74,12 +88,12 @@ petalinux-build
 - The generated `pl.dtsi` will include all IP blocks from your hardware design
 - You may need to adjust compatible strings for UIO access
 - The official method ensures device tree matches your exact hardware configuration
-- For manual overlays (current approach), the simpler `&amba` overlay works well for KV260
+- Manual overlays are possible but can be fragile across KV260 images; prefer the XSCT flow for reproducibility.
 
 ## Current Manual Approach
 
 The current `yolov2_accel.dtsi` uses a manual overlay approach that:
-- Overlays directly onto `&amba` (simpler, works well for KV260)
+- Overlays directly onto `&amba` (simpler, but not guaranteed to apply on every KV260 image)
 - Uses `generic-uio` compatible string for userspace access
 - Matches the addresses from `yolo2_config.h`
 

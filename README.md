@@ -143,13 +143,39 @@ See: `linux_app/README.md` and `linux_app/accel_package/README.md`
 Use the recommended entrypoint (loads overlay + `udmabuf` + runs inference):
 
 ```bash
-ssh ubuntu@kria "cd /home/ubuntu/linux_app && ./start_yolo.sh -v 1 -i /home/ubuntu/test_images/dog.jpg"
+ssh ubuntu@kria "cd /home/ubuntu/linux_app && YOLO2_VERBOSE=3 YOLO2_NO_DUMP=1 ./start_yolo.sh -i /home/ubuntu/test_images/dog.jpg"
+```
+
+You can also run the app **directly** (without `start_yolo.sh`) if you already loaded the overlay and set up `udmabuf`:
+
+```bash
+ssh ubuntu@kria "cd /home/ubuntu/linux_app && sudo ./yolo2_linux -v 3 -i /home/ubuntu/test_images/dog.jpg"
 ```
 
 If this is a fresh board and `udmabuf` is missing, install it once:
 - `linux_app/setup/README.md`
 
 See: `linux_app/README.md`
+
+## Automation (staged driver script)
+
+The 7 steps above are also runnable as a staged script driven by a YAML config:
+- Config template: `pipeline.yaml` (copy to `pipeline.local.yaml` and edit)
+- Runner: `scripts/run_pipeline.py`
+
+```bash
+# One-time dependency (if your system doesn't already have it)
+python3 -m pip install pyyaml
+
+cp pipeline.yaml pipeline.local.yaml
+$EDITOR pipeline.local.yaml
+
+python3 scripts/run_pipeline.py --config pipeline.local.yaml --list-stages
+python3 scripts/run_pipeline.py --config pipeline.local.yaml
+
+# Re-run only a subset (example):
+python3 scripts/run_pipeline.py --config pipeline.local.yaml --from vivado_build --to run_kv260
+```
 
 ## Documentation map
 

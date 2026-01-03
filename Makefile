@@ -74,7 +74,7 @@ gen: $(BUILD_DIR)
 	@echo "$(COLOR_BLUE)Generating hardware parameters...$(COLOR_RESET)"
 	@cd . && python3 $(HW_PARAMS_SCRIPT)
 	@echo "$(COLOR_BLUE)Building weight generation executable...$(COLOR_RESET)"
-	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(GEN_TARGET) $(WEIGHT_GEN_SRC) $(CORE_SRCS) hls/models/yolov2/model_config.cpp $(EXTRA_SRCS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -DSTB_IMAGE_CPU_BUILD $(INCLUDES) -o $(GEN_TARGET) $(WEIGHT_GEN_SRC) $(CORE_SRCS) hls/models/yolov2/model_config.cpp $(EXTRA_SRCS) $(LDFLAGS)
 	@echo "$(COLOR_GREEN)Weight generation build complete. Run ./$(GEN_TARGET) [--precision fp32|int16] to generate weights_reorg*.bin$(COLOR_RESET)"
 
 # Build the main detection application

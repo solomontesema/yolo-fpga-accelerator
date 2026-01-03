@@ -102,3 +102,11 @@ tmp/
 linux_app_backup/
 app/
 app_r5/
+
+# Local pipeline config overrides
+pipeline.local.yaml
+pipeline.local.yml
+
+# Accelerator-package local backups
+linux_app/accel_package/_backups/
+linux_app/accel_package/*.bak.*
