@@ -78,6 +78,8 @@ temp/
 vivado/*.log
 vivado/*.jou
 vivado/yolov2_int16/
+vivado/*_autogen/
+**/_vivado_batch/
 
 # KV260 linux_app build outputs and runtime dumps
 linux_app/build/

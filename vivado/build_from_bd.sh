@@ -130,6 +130,12 @@ if [[ ${#ip_repos[@]} -eq 0 ]]; then
   fi
 fi
 
+if [[ ${#ip_repos[@]} -gt 0 ]]; then
+  for i in "${!ip_repos[@]}"; do
+    ip_repos[$i]="$(abs_path "${ip_repos[$i]}")"
+  done
+fi
+
 work_dir="${proj_dir}/_vivado_batch"
 mkdir -p "$work_dir"
 
@@ -145,18 +151,29 @@ else
 fi
 echo "INFO: Work dir:       $work_dir"
 
-tcl_args=(--bd-tcl "$bd_tcl" --proj-dir "$proj_dir" --xsa "$xsa_out" --jobs "$jobs")
+# Robust argument forwarding:
+# Some Vivado setups can behave unexpectedly with `-tclargs` + `--foo` style args,
+# so we pass inputs via environment variables and keep `build_from_bd.tcl` flexible.
+export YOLO2_VIVADO_BD_TCL="$bd_tcl"
+export YOLO2_VIVADO_PROJ_DIR="$proj_dir"
+export YOLO2_VIVADO_XSA="$xsa_out"
+export YOLO2_VIVADO_JOBS="$jobs"
 
-if [[ -n "$proj_name" ]]; then tcl_args+=(--proj-name "$proj_name"); fi
-if [[ -n "$design_name" ]]; then tcl_args+=(--design-name "$design_name"); fi
-if [[ -n "$top_name" ]]; then tcl_args+=(--top "$top_name"); fi
-if [[ -n "$part" ]]; then tcl_args+=(--part "$part"); fi
-if [[ -n "$board_part" ]]; then tcl_args+=(--board-part "$board_part"); fi
-if [[ -n "$board_connections" ]]; then tcl_args+=(--board-connections "$board_connections"); fi
-for r in "${ip_repos[@]}"; do tcl_args+=(--ip-repo "$r"); done
+if [[ -n "$proj_name" ]]; then export YOLO2_VIVADO_PROJ_NAME="$proj_name"; else unset YOLO2_VIVADO_PROJ_NAME 2>/dev/null || true; fi
+if [[ -n "$design_name" ]]; then export YOLO2_VIVADO_DESIGN_NAME="$design_name"; else unset YOLO2_VIVADO_DESIGN_NAME 2>/dev/null || true; fi
+if [[ -n "$top_name" ]]; then export YOLO2_VIVADO_TOP="$top_name"; else unset YOLO2_VIVADO_TOP 2>/dev/null || true; fi
+if [[ -n "$part" ]]; then export YOLO2_VIVADO_PART="$part"; else unset YOLO2_VIVADO_PART 2>/dev/null || true; fi
+if [[ -n "$board_part" ]]; then export YOLO2_VIVADO_BOARD_PART="$board_part"; else unset YOLO2_VIVADO_BOARD_PART 2>/dev/null || true; fi
+if [[ -n "$board_connections" ]]; then export YOLO2_VIVADO_BOARD_CONNECTIONS="$board_connections"; else unset YOLO2_VIVADO_BOARD_CONNECTIONS 2>/dev/null || true; fi
+
+if [[ ${#ip_repos[@]} -gt 0 ]]; then
+  export YOLO2_VIVADO_IP_REPOS="$(printf '%s\n' "${ip_repos[@]}")"
+else
+  unset YOLO2_VIVADO_IP_REPOS 2>/dev/null || true
+fi
 
 pushd "$work_dir" >/dev/null
-"$vivado_bin" -mode batch -source "${repo_root}/vivado/build_from_bd.tcl" -tclargs "${tcl_args[@]}"
+"$vivado_bin" -mode batch -source "${repo_root}/vivado/build_from_bd.tcl"
 popd >/dev/null
 
 echo "INFO: Build finished."

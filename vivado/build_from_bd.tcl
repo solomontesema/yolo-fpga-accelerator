@@ -1,6 +1,10 @@
 # KV260 YOLOv2 INT16 - Non-interactive Vivado build
 #
-# This TCL is meant to be run by `vivado -mode batch -source vivado/build_from_bd.tcl -tclargs ...`.
+# This TCL is meant to be run non-interactively (no GUI). Preferred entrypoint is:
+#   vivado/build_from_bd.sh  (exports YOLO2_VIVADO_* env vars, then runs this script)
+#
+# You can also run it directly with:
+#   vivado -mode batch -source vivado/build_from_bd.tcl -tclargs ...
 #
 # It:
 # - Creates a Vivado project (no GUI)
@@ -15,6 +19,10 @@
 
 proc usage {} {
   puts "Usage:"
+  puts "  # Recommended:"
+  puts "  vivado/build_from_bd.sh --bd-tcl <path/to/bd.tcl> --proj-dir <dir> --xsa <out.xsa> [--ip-repo <dir>]..."
+  puts ""
+  puts "  # Or run directly:"
   puts "  vivado -mode batch -source vivado/build_from_bd.tcl -tclargs \\"
   puts "    --bd-tcl <path/to/bd.tcl> \\"
   puts "    --proj-dir <output/project/dir> \\"
@@ -29,7 +37,7 @@ proc usage {} {
   puts "    [--jobs <n>]"
   puts ""
   puts "Example:"
-  puts "  vivado -mode batch -source vivado/build_from_bd.tcl -tclargs \\"
+  puts "  vivado/build_from_bd.sh \\"
   puts "    --bd-tcl vivado/bd/kv260_yolov2_int16_bd.tcl \\"
   puts "    --proj-dir vivado/yolov2_int16_autogen \\"
   puts "    --xsa vivado/yolov2_int16_autogen/design_1_wrapper.xsa \\"
@@ -37,9 +45,10 @@ proc usage {} {
   puts "    --jobs 8"
 }
 
-proc require_opt {opts name} {
-  if {![info exists opts($name)] || $opts($name) eq ""} {
-    error "Missing required option: --$name"
+proc require_opt {opts_name key flag} {
+  upvar 1 $opts_name opts
+  if {![info exists opts($key)] || [string trim $opts($key)] eq ""} {
+    error "Missing required option: --$flag"
   }
 }
 
@@ -55,6 +64,22 @@ proc check_run_complete {run_name} {
   }
 }
 
+proc maybe_set_from_env {opts_name seen_name key env_key} {
+  upvar 1 $opts_name opts
+  upvar 1 $seen_name seen
+  if {[info exists seen($key)]} {
+    return
+  }
+  if {![info exists ::env($env_key)]} {
+    return
+  }
+  set v [string trim $::env($env_key)]
+  if {$v eq ""} {
+    return
+  }
+  set opts($key) $v
+}
+
 array set opts {
   bd_tcl ""
   proj_dir ""
@@ -68,6 +93,7 @@ array set opts {
   board_connections "som240_1_connector xilinx.com:kv260_carrier:som240_1_connector:1.3"
 }
 set ip_repos {}
+array set seen {}
 
 for {set i 0} {$i < [llength $argv]} {incr i} {
   set arg [lindex $argv $i]
@@ -75,14 +101,17 @@ for {set i 0} {$i < [llength $argv]} {incr i} {
     --bd-tcl {
       incr i
       set opts(bd_tcl) [lindex $argv $i]
+      set seen(bd_tcl) 1
     }
     --proj-dir {
       incr i
       set opts(proj_dir) [lindex $argv $i]
+      set seen(proj_dir) 1
     }
     --xsa {
       incr i
       set opts(xsa) [lindex $argv $i]
+      set seen(xsa) 1
     }
     --ip-repo {
       incr i
@@ -91,30 +120,37 @@ for {set i 0} {$i < [llength $argv]} {incr i} {
     --proj-name {
       incr i
       set opts(proj_name) [lindex $argv $i]
+      set seen(proj_name) 1
     }
     --design-name {
       incr i
       set opts(design_name) [lindex $argv $i]
+      set seen(design_name) 1
     }
     --top {
       incr i
       set opts(top) [lindex $argv $i]
+      set seen(top) 1
     }
     --jobs {
       incr i
       set opts(jobs) [lindex $argv $i]
+      set seen(jobs) 1
     }
     --part {
       incr i
       set opts(part) [lindex $argv $i]
+      set seen(part) 1
     }
     --board-part {
       incr i
       set opts(board_part) [lindex $argv $i]
+      set seen(board_part) 1
     }
     --board-connections {
       incr i
       set opts(board_connections) [lindex $argv $i]
+      set seen(board_connections) 1
     }
     -h -
     --help {
@@ -128,9 +164,29 @@ for {set i 0} {$i < [llength $argv]} {incr i} {
   }
 }
 
-require_opt opts bd_tcl
-require_opt opts proj_dir
-require_opt opts xsa
+maybe_set_from_env opts seen bd_tcl YOLO2_VIVADO_BD_TCL
+maybe_set_from_env opts seen proj_dir YOLO2_VIVADO_PROJ_DIR
+maybe_set_from_env opts seen xsa YOLO2_VIVADO_XSA
+maybe_set_from_env opts seen jobs YOLO2_VIVADO_JOBS
+maybe_set_from_env opts seen proj_name YOLO2_VIVADO_PROJ_NAME
+maybe_set_from_env opts seen design_name YOLO2_VIVADO_DESIGN_NAME
+maybe_set_from_env opts seen top YOLO2_VIVADO_TOP
+maybe_set_from_env opts seen part YOLO2_VIVADO_PART
+maybe_set_from_env opts seen board_part YOLO2_VIVADO_BOARD_PART
+maybe_set_from_env opts seen board_connections YOLO2_VIVADO_BOARD_CONNECTIONS
+
+if {[llength $ip_repos] == 0 && [info exists ::env(YOLO2_VIVADO_IP_REPOS)]} {
+  foreach line [split $::env(YOLO2_VIVADO_IP_REPOS) "\n"] {
+    set line [string trim $line]
+    if {$line ne ""} {
+      lappend ip_repos $line
+    }
+  }
+}
+
+require_opt opts bd_tcl "bd-tcl"
+require_opt opts proj_dir "proj-dir"
+require_opt opts xsa "xsa"
 
 set opts(bd_tcl) [file normalize $opts(bd_tcl)]
 set opts(proj_dir) [file normalize $opts(proj_dir)]
@@ -234,4 +290,3 @@ puts "INFO: Done."
 puts "INFO: XSA written to: $opts(xsa)"
 
 exit 0
-
