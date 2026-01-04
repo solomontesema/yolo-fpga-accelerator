@@ -96,9 +96,6 @@ yolov2_region_*_cpu.txt
 yolov2_region_*_hw.txt
 
 # Local helper prompts / scratch
-AI_CONTINUATION_PROMPT*.md
-QUICK_CONTINUATION_PROMPT.md
-AI_PROMPT_CAMERA_VIDEO_SUPPORT.md
 tmp/
 linux_app_backup/
 app/

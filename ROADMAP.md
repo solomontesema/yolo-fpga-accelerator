@@ -45,7 +45,7 @@ Quick note: ONNX (Open Neural Network Exchange) is a common file format for neur
 
 ## Next milestones (suggested order)
 
-### 1) Camera + video I/O (Goal A)
+### 1) Camera + video I/O (Goal A) ✅
 Scope (start simple, then refine):
 - USB/UVC camera via V4L2 (fastest path to a live demo)
 - MIPI camera via libcamera (once the pipeline is stable)
@@ -99,4 +99,3 @@ Deliverables:
 
 - I’m not trying to compete with or replicate commercial stacks (Vitis AI / DPU). They’re the inspiration, not the target.
 - If a feature adds a lot of complexity but doesn’t improve **reproducibility**, **performance**, or **usability**, it’s probably not worth it.
-
