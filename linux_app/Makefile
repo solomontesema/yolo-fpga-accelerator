@@ -12,7 +12,7 @@ CFLAGS += -I./include -I./include/third_party
 ARCH_FLAGS = -march=armv8-a
 
 # Libraries
-LDFLAGS = -lm -lrt
+LDFLAGS = -lm -lrt -pthread
 
 # Directories
 SRC_DIR = src
@@ -31,6 +31,8 @@ SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/yolo2_draw.c \
        $(SRC_DIR)/yolo2_v4l2.c \
        $(SRC_DIR)/yolo2_ffmpeg_video.c \
+       $(SRC_DIR)/yolo2_mjpeg_server.c \
+       $(SRC_DIR)/yolo2_mjpeg_streamer.c \
        $(SRC_DIR)/yolo2_log.c \
        $(SRC_DIR)/yolo2_labels.c \
        $(SRC_DIR)/file_loader.c \

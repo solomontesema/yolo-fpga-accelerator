@@ -202,6 +202,9 @@ Options:
   --video-fps <fps>         Video output FPS (default: 30)
   --save-annotated-dir <d>  Save annotated PNG frames to directory
   --output-json <path>      Write detections JSONL (one object per inference)
+  --stream-mjpeg <p|b:p>    Stream annotated frames as MJPEG over HTTP (e.g. 8080 or 0.0.0.0:8080)
+  --stream-mjpeg-quality <q> JPEG quality 1..100 (default: 80)
+  --stream-mjpeg-fps <fps>  MJPEG send rate (default: 4)
   -h            Show help
 ```
 
@@ -262,6 +265,27 @@ YOLO2_VERBOSE=1 YOLO2_NO_DUMP=1 ./start_yolo.sh \
   --save-annotated-dir /home/ubuntu/out_vid \
   --output-json /home/ubuntu/out_vid/dets.jsonl
 ```
+
+## Live stream to your PC (VLC) — headless MJPEG
+
+This streams annotated frames over HTTP as MJPEG (single-client, best-effort).
+
+If inference is slow, the streamer re-sends the most recent annotated frame at a fixed rate to keep VLC alive; the image updates when a new inference finishes.
+
+On KV260:
+
+```bash
+cd /home/ubuntu/linux_app
+YOLO2_VERBOSE=1 YOLO2_NO_DUMP=1 ./start_yolo.sh \
+  --video /home/ubuntu/test_videos/test.mp4 \
+  --infer-every 5 \
+  --max-frames 0 \
+  --stream-mjpeg 8080 \
+  --stream-mjpeg-fps 2
+```
+
+On your PC (VLC → Open Network Stream):
+- `http://<kv260-ip>:8080/`
 
 
 The environment variable `YOLO2_VERBOSE=0..3` is also supported. If you run via `sudo`, prefer `-v` or use `start_yolo.sh` (it forwards `YOLO2_*` variables through `sudo env ...`).

@@ -149,6 +149,7 @@ ssh ubuntu@kria "cd /home/ubuntu/linux_app && YOLO2_VERBOSE=3 YOLO2_NO_DUMP=1 ./
 `yolo2_linux` also supports headless streaming inference:
 - `--camera /dev/video0` (V4L2 USB/UVC camera)
 - `--video /path/to/video.mp4` (decoded via `ffmpeg`; install with `sudo apt-get install -y ffmpeg`)
+- Optional: `--stream-mjpeg 8080` to view annotated frames in VLC (`http://<kv260-ip>:8080/`, add `--stream-mjpeg-fps 2` if inference is slow)
 
 You can also run the app **directly** (without `start_yolo.sh`) if you already loaded the overlay and set up `udmabuf`:
 

@@ -37,6 +37,7 @@
 #include "yolo2_draw.h"
 #include "yolo2_v4l2.h"
 #include "yolo2_ffmpeg_video.h"
+#include "yolo2_mjpeg_streamer.h"
 #include "yolo2_postprocess.h"
 #include "yolo2_labels.h"
 #include "file_loader.h"
@@ -72,6 +73,12 @@ static int video_fps = 30;
 // Headless visual output
 static char save_annotated_dir[512] = "";
 static char output_json_path[512] = "";
+
+// Streaming output (MJPEG over HTTP)
+static char stream_mjpeg_bind[64] = "0.0.0.0";
+static int stream_mjpeg_port = 0;     // 0 = disabled
+static int stream_mjpeg_quality = 80; // JPEG quality 1..100
+static int stream_mjpeg_fps = 4;      // send rate for MJPEG (keeps VLC alive even when inference is slow)
 
 typedef enum {
     INPUT_MODE_IMAGE = 0,
@@ -134,6 +141,48 @@ static int parse_int(const char *s, int *out)
         return -1;
     }
     *out = (int)v;
+    return 0;
+}
+
+static int parse_bind_port(const char *s, char *bind_out, size_t bind_out_size, int *port_out)
+{
+    if (!s || !s[0] || !bind_out || bind_out_size == 0 || !port_out) {
+        return -1;
+    }
+
+    // Accept a plain port number: "8080"
+    {
+        char *end = NULL;
+        long v = strtol(s, &end, 10);
+        if (end != s && end && *end == '\0') {
+            if (v <= 0 || v > 65535) return -1;
+            snprintf(bind_out, bind_out_size, "0.0.0.0");
+            *port_out = (int)v;
+            return 0;
+        }
+    }
+
+    // Accept "bind:port" (IPv4/hostname; IPv6 not supported here).
+    const char *colon = strrchr(s, ':');
+    if (!colon) {
+        return -1;
+    }
+
+    int port = 0;
+    if (parse_int(colon + 1, &port) != 0 || port <= 0 || port > 65535) {
+        return -1;
+    }
+
+    const size_t host_len = (size_t)(colon - s);
+    if (host_len == 0) {
+        snprintf(bind_out, bind_out_size, "0.0.0.0");
+    } else {
+        if (host_len >= bind_out_size) return -1;
+        memcpy(bind_out, s, host_len);
+        bind_out[host_len] = '\0';
+    }
+
+    *port_out = port;
     return 0;
 }
 
@@ -216,6 +265,9 @@ static void print_usage(const char *prog_name) {
     printf("  --video-fps <fps>         Video output FPS (default: %d)\n", video_fps);
     printf("  --save-annotated-dir <d>  Save annotated PNG frames to directory\n");
     printf("  --output-json <path>      Write detections JSONL (one object per inference)\n");
+    printf("  --stream-mjpeg <p|b:p>    Stream annotated frames as MJPEG over HTTP (e.g. 8080 or 0.0.0.0:8080)\n");
+    printf("  --stream-mjpeg-quality <q> JPEG quality 1..100 (default: %d)\n", stream_mjpeg_quality);
+    printf("  --stream-mjpeg-fps <fps>  MJPEG send rate (default: %d)\n", stream_mjpeg_fps);
     printf("  -h            Show this help\n");
     printf("\n");
     printf("Notes:\n");
@@ -274,6 +326,9 @@ int main(int argc, char *argv[]) {
         OPT_VIDEO_FPS,
         OPT_SAVE_ANNOTATED_DIR,
         OPT_OUTPUT_JSON,
+        OPT_STREAM_MJPEG,
+        OPT_STREAM_MJPEG_QUALITY,
+        OPT_STREAM_MJPEG_FPS,
     };
 
     static const struct option long_opts[] = {
@@ -290,6 +345,9 @@ int main(int argc, char *argv[]) {
         {"video-fps", required_argument, NULL, OPT_VIDEO_FPS},
         {"save-annotated-dir", required_argument, NULL, OPT_SAVE_ANNOTATED_DIR},
         {"output-json", required_argument, NULL, OPT_OUTPUT_JSON},
+        {"stream-mjpeg", required_argument, NULL, OPT_STREAM_MJPEG},
+        {"stream-mjpeg-quality", required_argument, NULL, OPT_STREAM_MJPEG_QUALITY},
+        {"stream-mjpeg-fps", required_argument, NULL, OPT_STREAM_MJPEG_FPS},
         {NULL, 0, NULL, 0},
     };
     
@@ -385,6 +443,29 @@ int main(int argc, char *argv[]) {
             case OPT_OUTPUT_JSON:
                 strncpy(output_json_path, optarg, sizeof(output_json_path) - 1);
                 break;
+            case OPT_STREAM_MJPEG: {
+                int port = 0;
+                char bind[64];
+                if (parse_bind_port(optarg, bind, sizeof(bind), &port) != 0) {
+                    fprintf(stderr, "ERROR: Invalid --stream-mjpeg value (expected <port> or <bind>:<port>): %s\n", optarg);
+                    return 1;
+                }
+                snprintf(stream_mjpeg_bind, sizeof(stream_mjpeg_bind), "%s", bind);
+                stream_mjpeg_port = port;
+                break;
+            }
+            case OPT_STREAM_MJPEG_QUALITY:
+                if (parse_int(optarg, &stream_mjpeg_quality) != 0 || stream_mjpeg_quality < 1 || stream_mjpeg_quality > 100) {
+                    fprintf(stderr, "ERROR: Invalid --stream-mjpeg-quality (1..100): %s\n", optarg);
+                    return 1;
+                }
+                break;
+            case OPT_STREAM_MJPEG_FPS:
+                if (parse_int(optarg, &stream_mjpeg_fps) != 0 || stream_mjpeg_fps < 1 || stream_mjpeg_fps > 30) {
+                    fprintf(stderr, "ERROR: Invalid --stream-mjpeg-fps (1..30): %s\n", optarg);
+                    return 1;
+                }
+                break;
         }
     }
 
@@ -448,6 +529,12 @@ int main(int argc, char *argv[]) {
     if (output_json_path[0]) {
         YOLO2_LOG_INFO("  JSONL:      %s\n", output_json_path);
     }
+    if (stream_mjpeg_port > 0) {
+        YOLO2_LOG_INFO("  MJPEG:      http://<kv260-ip>:%d/ (bind %s, send %dfps)\n",
+                       stream_mjpeg_port,
+                       stream_mjpeg_bind,
+                       stream_mjpeg_fps);
+    }
     YOLO2_LOG_INFO("\n");
     
     // Build weight file paths
@@ -466,6 +553,7 @@ int main(int argc, char *argv[]) {
     char **labels = NULL;
     int num_labels = 0;
     FILE *json_fp = NULL;
+    yolo2_mjpeg_streamer_t *mjpeg_stream = NULL;
     
     // Initialize inference context
     yolo2_inference_init(&ctx);
@@ -789,6 +877,7 @@ int main(int argc, char *argv[]) {
     } else {
         // Streaming loop (camera/video), writes headless annotated outputs.
         int stream_ok = 1;
+        int mjpeg_started = 0;
         int frame_w = 0;
         int frame_h = 0;
         uint8_t *rgb_frame = NULL;
@@ -796,6 +885,20 @@ int main(int argc, char *argv[]) {
 
         int frame_idx = 0;
         int infer_idx = 0;
+
+        if (stream_mjpeg_port > 0) {
+            if (yolo2_mjpeg_streamer_start(
+                    &mjpeg_stream,
+                    stream_mjpeg_bind,
+                    stream_mjpeg_port,
+                    stream_mjpeg_fps,
+                    stream_mjpeg_quality) != 0) {
+                fprintf(stderr, "ERROR: Failed to start MJPEG streamer on %s:%d\n", stream_mjpeg_bind, stream_mjpeg_port);
+                result = 1;
+                goto cleanup;
+            }
+            mjpeg_started = 1;
+        }
 
         if (input_mode == INPUT_MODE_CAMERA) {
             yolo2_v4l2_camera_t cam;
@@ -837,6 +940,7 @@ int main(int argc, char *argv[]) {
             }
 
             while (max_frames == 0 || infer_idx < max_frames) {
+
                 yolo2_v4l2_frame_t frame;
                 const int dq = yolo2_v4l2_dequeue(&cam, &frame);
                 if (dq == 0) {
@@ -972,20 +1076,18 @@ int main(int argc, char *argv[]) {
                     fflush(json_fp);
                 }
 
-                if (save_annotated_dir[0]) {
-                    yolo2_draw_detections_rgb24(
-                        rgb_frame,
-                        frame_w,
-                        frame_h,
-                        dets,
-                        num_dets,
-                        det_thresh,
-                        (const char **)labels,
-                        num_labels);
+                const int want_annotated = (save_annotated_dir[0] != '\0') || mjpeg_started;
+                if (want_annotated) {
+                    yolo2_draw_detections_rgb24(rgb_frame, frame_w, frame_h, dets, num_dets, det_thresh, (const char **)labels, num_labels);
+                }
 
+                if (save_annotated_dir[0]) {
                     char out_path[PATH_MAX];
                     snprintf(out_path, sizeof(out_path), "%s/frame_%06d.png", save_annotated_dir, infer_idx);
                     (void)yolo2_write_png_rgb24(out_path, rgb_frame, frame_w, frame_h);
+                }
+                if (mjpeg_started) {
+                    (void)yolo2_mjpeg_streamer_update_rgb24(mjpeg_stream, rgb_frame, frame_w, frame_h);
                 }
 
                 yolo2_free_detections(dets, num_dets);
@@ -1145,20 +1247,18 @@ int main(int argc, char *argv[]) {
                     fflush(json_fp);
                 }
 
-                if (save_annotated_dir[0]) {
-                    yolo2_draw_detections_rgb24(
-                        rgb_frame,
-                        frame_w,
-                        frame_h,
-                        dets,
-                        num_dets,
-                        det_thresh,
-                        (const char **)labels,
-                        num_labels);
+                const int want_annotated = (save_annotated_dir[0] != '\0') || mjpeg_started;
+                if (want_annotated) {
+                    yolo2_draw_detections_rgb24(rgb_frame, frame_w, frame_h, dets, num_dets, det_thresh, (const char **)labels, num_labels);
+                }
 
+                if (save_annotated_dir[0]) {
                     char out_path[PATH_MAX];
                     snprintf(out_path, sizeof(out_path), "%s/frame_%06d.png", save_annotated_dir, infer_idx);
                     (void)yolo2_write_png_rgb24(out_path, rgb_frame, frame_w, frame_h);
+                }
+                if (mjpeg_started) {
+                    (void)yolo2_mjpeg_streamer_update_rgb24(mjpeg_stream, rgb_frame, frame_w, frame_h);
                 }
 
                 yolo2_free_detections(dets, num_dets);
@@ -1194,6 +1294,7 @@ cleanup:
     if (bias_data) free(bias_data);
     if (labels) yolo2_free_labels(labels, num_labels);
     if (json_fp) fclose(json_fp);
+    if (mjpeg_stream) yolo2_mjpeg_streamer_stop(mjpeg_stream);
     if (ctx.net) yolo2_free_network(ctx.net);
     
     yolo2_inference_cleanup(&ctx);

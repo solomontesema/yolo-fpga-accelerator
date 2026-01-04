@@ -98,10 +98,15 @@ yolov2_region_*_hw.txt
 # Local helper prompts / scratch
 AI_CONTINUATION_PROMPT*.md
 QUICK_CONTINUATION_PROMPT.md
+AI_PROMPT_CAMERA_VIDEO_SUPPORT.md
 tmp/
 linux_app_backup/
 app/
 app_r5/
+
+# Local video demos + outputs
+examples/test_videos/leli.mp4
+out_vid/
 
 # Local pipeline config overrides
 pipeline.local.yaml
