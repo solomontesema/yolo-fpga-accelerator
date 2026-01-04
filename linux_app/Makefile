@@ -28,10 +28,14 @@ SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/yolo2_network.c \
        $(SRC_DIR)/yolo2_postprocess.c \
        $(SRC_DIR)/yolo2_image_loader.c \
+       $(SRC_DIR)/yolo2_draw.c \
+       $(SRC_DIR)/yolo2_v4l2.c \
+       $(SRC_DIR)/yolo2_ffmpeg_video.c \
        $(SRC_DIR)/yolo2_log.c \
        $(SRC_DIR)/yolo2_labels.c \
        $(SRC_DIR)/file_loader.c \
-       $(SRC_DIR)/stb_image_impl.c
+       $(SRC_DIR)/stb_image_impl.c \
+       $(SRC_DIR)/stb_image_write_impl.c
 
 # Object files
 OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))

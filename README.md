@@ -146,6 +146,10 @@ Use the recommended entrypoint (loads overlay + `udmabuf` + runs inference):
 ssh ubuntu@kria "cd /home/ubuntu/linux_app && YOLO2_VERBOSE=3 YOLO2_NO_DUMP=1 ./start_yolo.sh -i /home/ubuntu/test_images/dog.jpg"
 ```
 
+`yolo2_linux` also supports headless streaming inference:
+- `--camera /dev/video0` (V4L2 USB/UVC camera)
+- `--video /path/to/video.mp4` (decoded via `ffmpeg`; install with `sudo apt-get install -y ffmpeg`)
+
 You can also run the app **directly** (without `start_yolo.sh`) if you already loaded the overlay and set up `udmabuf`:
 
 ```bash

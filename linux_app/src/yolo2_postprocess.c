@@ -197,21 +197,31 @@ int yolo2_get_region_detections(layer_t *l, float *output,
 
 // Box IoU
 static float box_iou(yolo2_box_t a, yolo2_box_t b) {
-    float overlap_x1 = (a.x > b.x) ? a.x : b.x;
-    float overlap_y1 = (a.y > b.y) ? a.y : b.y;
-    float overlap_x2 = (a.x + a.w < b.x + b.w) ? (a.x + a.w) : (b.x + b.w);
-    float overlap_y2 = (a.y + a.h < b.y + b.h) ? (a.y + a.h) : (b.y + b.h);
-    
-    if (overlap_x2 < overlap_x1 || overlap_y2 < overlap_y1) {
+    // Boxes are center-based (x,y are center; w,h are width/height).
+    const float a_left = a.x - a.w * 0.5f;
+    const float a_right = a.x + a.w * 0.5f;
+    const float a_top = a.y - a.h * 0.5f;
+    const float a_bottom = a.y + a.h * 0.5f;
+
+    const float b_left = b.x - b.w * 0.5f;
+    const float b_right = b.x + b.w * 0.5f;
+    const float b_top = b.y - b.h * 0.5f;
+    const float b_bottom = b.y + b.h * 0.5f;
+
+    const float overlap_w = fminf(a_right, b_right) - fmaxf(a_left, b_left);
+    const float overlap_h = fminf(a_bottom, b_bottom) - fmaxf(a_top, b_top);
+
+    if (overlap_w <= 0.0f || overlap_h <= 0.0f) {
         return 0.0f;
     }
-    
-    float intersection = (overlap_x2 - overlap_x1) * (overlap_y2 - overlap_y1);
-    float area_a = a.w * a.h;
-    float area_b = b.w * b.h;
-    float union_area = area_a + area_b - intersection;
-    
-    if (union_area <= 0.0f) return 0.0f;
+
+    const float intersection = overlap_w * overlap_h;
+    const float area_a = a.w * a.h;
+    const float area_b = b.w * b.h;
+    const float union_area = area_a + area_b - intersection;
+    if (union_area <= 0.0f) {
+        return 0.0f;
+    }
     return intersection / union_area;
 }
 

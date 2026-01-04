@@ -183,12 +183,25 @@ Usage: sudo ./yolo2_linux [options]
 
 Options:
   -i <image>    Input image path (default: /home/ubuntu/test_images/dog.jpg)
+  --camera <dev>           Camera device (e.g., /dev/video0)
+  --video <path>           Video file path (decoded via ffmpeg)
   -w <dir>      Weights directory (default: /home/ubuntu/weights)
   -c <config>   Network config file (default: /home/ubuntu/config/yolov2.cfg)
   -l <labels>   Labels file (default: /home/ubuntu/config/coco.names)
   -t <thresh>   Detection threshold (default: 0.24)
   -n <nms>      NMS threshold (default: 0.45)
   -v <level>    Verbosity 0..3 (overrides YOLO2_VERBOSE)
+  --max-frames <N>          Stop after N inference runs (0 = infinite)
+  --infer-every <N>         Run inference every N frames (default: 1)
+  --cam-width <W>           Camera width (default: 640)
+  --cam-height <H>          Camera height (default: 480)
+  --cam-fps <fps>           Camera FPS (default: 30)
+  --cam-format mjpeg|yuyv   Camera format (default: mjpeg; falls back to yuyv)
+  --video-width <W>         Video output width (default: 640)
+  --video-height <H>        Video output height (default: 480)
+  --video-fps <fps>         Video output FPS (default: 30)
+  --save-annotated-dir <d>  Save annotated PNG frames to directory
+  --output-json <path>      Write detections JSONL (one object per inference)
   -h            Show help
 ```
 
@@ -198,6 +211,58 @@ Options:
 - `-v 1`: high-level progress (default)
 - `-v 2`: per-layer info
 - `-v 3`: debug (addresses, status polling)
+
+---
+
+## Camera mode (USB / V4L2)
+
+Defaults:
+- `/dev/video0`
+- MJPEG 640×480 @ 30 FPS (falls back to YUYV if MJPEG isn't supported)
+
+Example:
+
+```bash
+cd /home/ubuntu/linux_app
+YOLO2_VERBOSE=3 YOLO2_NO_DUMP=1 ./start_yolo.sh \
+  --camera /dev/video0 \
+  --max-frames 5 \
+  --save-annotated-dir /home/ubuntu/out_cam
+```
+
+Direct run (if overlay + `udmabuf` are already loaded):
+
+```bash
+cd /home/ubuntu/linux_app
+sudo YOLO2_VERBOSE=3 YOLO2_NO_DUMP=1 ./yolo2_linux \
+  --camera /dev/video0 \
+  --max-frames 5 \
+  --save-annotated-dir ./out
+```
+
+This writes annotated frames:
+- `/home/ubuntu/out_cam/frame_000001.png`, ...
+
+## Video file mode (ffmpeg)
+
+Requires `ffmpeg` on the KV260:
+
+```bash
+sudo apt-get update && sudo apt-get install -y ffmpeg
+```
+
+Example:
+
+```bash
+cd /home/ubuntu/linux_app
+YOLO2_VERBOSE=1 YOLO2_NO_DUMP=1 ./start_yolo.sh \
+  --video /home/ubuntu/test_videos/test.mp4 \
+  --infer-every 5 \
+  --max-frames 10 \
+  --save-annotated-dir /home/ubuntu/out_vid \
+  --output-json /home/ubuntu/out_vid/dets.jsonl
+```
+
 
 The environment variable `YOLO2_VERBOSE=0..3` is also supported. If you run via `sudo`, prefer `-v` or use `start_yolo.sh` (it forwards `YOLO2_*` variables through `sudo env ...`).
 

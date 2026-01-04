@@ -593,12 +593,20 @@ int yolo2_execute_region_layer(yolo2_inference_context_t *ctx, int layer_idx) {
     }
     
     // Dequantize to float
-    float *region_f = (float*)malloc(region_output_len * sizeof(float));
-    if (!region_f) {
-        fprintf(stderr, "ERROR: Failed to allocate float buffer for region\n");
-        free(region_buf);
-        return -1;
+    if (!ctx->region_output || ctx->region_output_size != (size_t)region_output_len) {
+        free(ctx->region_output);
+        ctx->region_output = (float*)malloc((size_t)region_output_len * sizeof(float));
+        if (!ctx->region_output) {
+            fprintf(stderr, "ERROR: Failed to allocate float buffer for region\n");
+            ctx->region_output_size = 0;
+            ctx->region_layer_idx = -1;
+            free(region_buf);
+            return -1;
+        }
+        ctx->region_output_size = (size_t)region_output_len;
     }
+
+    float *region_f = ctx->region_output;
     
     if (ctx->act_q && ctx->act_q_size > 0) {
         const int q_out = ctx->current_Qa;
@@ -621,8 +629,6 @@ int yolo2_execute_region_layer(yolo2_inference_context_t *ctx, int layer_idx) {
     }
     
     // Store output
-    ctx->region_output = region_f;
-    ctx->region_output_size = region_output_len;
     ctx->region_layer_idx = layer_idx;
     
     YOLO2_LOG_INFO("    REGION layer output dequantized: %d elements\n", region_output_len);
