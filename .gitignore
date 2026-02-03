@@ -108,7 +108,11 @@ out_vid/
 # Local pipeline config overrides
 pipeline.local.yaml
 pipeline.local.yml
+yolo2_report.local.json
 
 # Accelerator-package local backups
 linux_app/accel_package/_backups/
 linux_app/accel_package/*.bak.*
+
+# Local temporary files and reports
+reports/

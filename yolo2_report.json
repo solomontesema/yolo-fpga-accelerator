@@ -1,0 +1,15 @@
+{
+  "reports_dir": "reports",
+  "hls_report_dir": "yolo2_int16/solution1/syn/report",
+  "vivado_report_dir": "vivado/yolov2_int16/yolov2_int16.runs/impl_1/",
+  "kv260": {
+    "enabled": false,
+    "host": "ubuntu@kria",
+    "port": 22,
+    "identity_file": "",
+    "remote_cmd_template": "./linux_app/start_yolo.sh -v 1 -i /home/ubuntu/test_images/dog.jpg --max-frames 10",
+    "force_tty": true,
+    "password_env": "KV260_SSH_PASSWORD",
+    "timeout_s": 300
+  }
+}
