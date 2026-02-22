@@ -167,6 +167,7 @@ See: `linux_app/README.md`
 The 7 steps above are also runnable as a staged script driven by a YAML config:
 - Config template: `pipeline.yaml` (copy to `pipeline.local.yaml` and edit)
 - Runner: `scripts/run_pipeline.py`
+- Optional cleanup before a fresh run: `./clean_builds.sh`
 
 ```bash
 # One-time dependency (if your system doesn't already have it)
