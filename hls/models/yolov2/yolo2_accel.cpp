@@ -40,10 +40,10 @@ void YOLO2_FPGA(IO_Dtype *Input, IO_Dtype *Output, IO_Dtype *Weight, IO_Dtype *B
 // Output: layer0 = 416*416*32 = 5,537,792 words
 // Weight: weights_reorg.bin = 50,941,792 words
 // Beta: bias.bin = 10,761 words
-HLS_PRAGMA(HLS INTERFACE m_axi depth=6922240  port=Input    offset=slave bundle=DATA_BUS_IN  num_read_outstanding=1 num_write_outstanding=1 max_read_burst_length=64 max_write_burst_length=64)
-HLS_PRAGMA(HLS INTERFACE m_axi depth=5537792  port=Output   offset=slave bundle=DATA_BUS_OUT num_read_outstanding=1 num_write_outstanding=1 max_read_burst_length=64 max_write_burst_length=64)
-HLS_PRAGMA(HLS INTERFACE m_axi depth=50941792 port=Weight  offset=slave bundle=DATA_BUS1    num_read_outstanding=1 max_read_burst_length=128)
-HLS_PRAGMA(HLS INTERFACE m_axi depth=10761    port=Beta    offset=slave bundle=DATA_BUS1    num_read_outstanding=1 max_read_burst_length=128)
+HLS_PRAGMA(HLS INTERFACE m_axi depth=6922240  port=Input    offset=slave bundle=DATA_BUS_IN  num_read_outstanding=4 num_write_outstanding=4 max_read_burst_length=64 max_write_burst_length=64)
+HLS_PRAGMA(HLS INTERFACE m_axi depth=5537792  port=Output   offset=slave bundle=DATA_BUS_OUT num_read_outstanding=4 num_write_outstanding=4 max_read_burst_length=64 max_write_burst_length=64)
+HLS_PRAGMA(HLS INTERFACE m_axi depth=50941792 port=Weight  offset=slave bundle=DATA_BUS1    num_read_outstanding=4 max_read_burst_length=128)
+HLS_PRAGMA(HLS INTERFACE m_axi depth=10761    port=Beta    offset=slave bundle=DATA_BUS1    num_read_outstanding=4 max_read_burst_length=128)
 
 HLS_PRAGMA(HLS INTERFACE s_axilite register port=return bundle=CTRL_BUS)
 HLS_PRAGMA(HLS INTERFACE s_axilite register port=IFM_num bundle=CTRL_BUS)
@@ -106,8 +106,10 @@ HLS_PRAGMA(HLS ARRAY_PARTITION variable=input_buffer0 complete dim=1)
 HLS_PRAGMA(HLS ARRAY_PARTITION variable=input_buffer1 complete dim=1)
     static IO_Dtype output_buffer[Tm][Tr][Tc];
 HLS_PRAGMA(HLS ARRAY_PARTITION variable=output_buffer complete dim=1)
+HLS_PRAGMA(HLS BIND_STORAGE variable=output_buffer type=RAM_S2P impl=LUTRAM)
     static IO_Dtype output_buffer1[Tm][Tr][Tc];
 HLS_PRAGMA(HLS ARRAY_PARTITION variable=output_buffer1 complete dim=1)
+HLS_PRAGMA(HLS BIND_STORAGE variable=output_buffer1 type=RAM_S2P impl=LUTRAM)
     static IO_Dtype beta_buffer[MAX_BETA_LENGTH];
 
 /////////////////////////////////param
