@@ -572,6 +572,29 @@ def stage_package_firmware(cfg: dict[str, Any], *, repo_root: Path, dry_run: boo
     bit = str(pkg.get("bit", "") or "").strip()
     bit_bin = str(pkg.get("bit_bin", "") or "").strip()
 
+    # Choose an explicit bitstream by default so packaging does not accidentally pick a stale
+    # pre-generated .bit.bin from a previous run.
+    if not bit:
+        xsa_stem = xsa_path.stem
+        xsa_dir = xsa_path.parent
+        bit_candidates = [
+            xsa_dir / f"{xsa_stem}.bit",
+            xsa_dir / f"{xsa_dir.name}.runs/impl_1/{xsa_stem}.bit",
+        ]
+        found_bits = [p for p in bit_candidates if p.exists()]
+        if found_bits:
+            selected_bit = max(found_bits, key=lambda p: p.stat().st_mtime)
+            bit = str(selected_bit)
+            print(f"INFO: Auto-selected bitstream for packaging: {selected_bit}")
+            if xsa_path.exists():
+                try:
+                    if selected_bit.stat().st_mtime + 1e-6 < xsa_path.stat().st_mtime:
+                        print(
+                            "WARNING: Selected .bit appears older than .xsa; verify vivado_build completed for this run."
+                        )
+                except OSError:
+                    pass
+
     dtbo_cfg = _require_dict(pkg, "dtbo")
     method = str(dtbo_cfg.get("method", "manual") or "manual").strip().lower()
     if method not in {"manual", "xsct", "skip"}:

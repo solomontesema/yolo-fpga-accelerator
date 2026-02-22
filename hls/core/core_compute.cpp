@@ -25,6 +25,10 @@ void compute(IO_Dtype input_buffer[Tn][OnChipIB_Height][OnChipIB_Width], IO_Dtyp
              const int TM_MIN,const int TR_MIN,const int TC_MIN,bool enable,
              int Qw, int Qa_in, int Qa_out, int Qb)
 {
+HLS_PRAGMA(HLS ARRAY_PARTITION variable=input_buffer complete dim=1)
+HLS_PRAGMA(HLS ARRAY_PARTITION variable=output_buffer complete dim=1)
+HLS_PRAGMA(HLS ARRAY_PARTITION variable=weight_buffer complete dim=1)
+HLS_PRAGMA(HLS ARRAY_PARTITION variable=weight_buffer complete dim=2)
 #ifdef INT16_MODE
     static Acc_Dtype local_beta_buffer[Tm];
 HLS_PRAGMA(HLS ARRAY_PARTITION variable=local_beta_buffer complete dim=1)
@@ -44,6 +48,19 @@ HLS_PRAGMA(HLS ARRAY_PARTITION variable=local_beta_buffer complete dim=1)
     // Precompute shifts to align accumulator/bias into Qa_out domain.
     const int shift_out = Qa_in + Qw - Qa_out;
     const int shift_bias = Qb - Qa_out;
+    const bool first_input_tile = (n == 0);
+
+    const bool bias_shift_right = (shift_bias > 0);
+    const bool bias_shift_left = (shift_bias < 0);
+    const int bias_shift_abs = bias_shift_right ? shift_bias : (bias_shift_left ? -shift_bias : 0);
+    const int bias_shift_mag = (bias_shift_abs > 30) ? 30 : bias_shift_abs;
+    const int64_t bias_round = (bias_shift_right && bias_shift_mag > 0) ? (1LL << (bias_shift_mag - 1)) : 0;
+
+    const bool out_shift_right = (shift_out > 0);
+    const bool out_shift_left = (shift_out < 0);
+    const int out_shift_abs = out_shift_right ? shift_out : (out_shift_left ? -shift_out : 0);
+    const int out_shift_mag = (out_shift_abs > 30) ? 30 : out_shift_abs;
+    const int64_t out_round = (out_shift_right && out_shift_mag > 0) ? (1LL << (out_shift_mag - 1)) : 0;
 
     for(i =0;i < Ksize; i++)
 DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=K)
@@ -54,22 +71,24 @@ DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=Tr)
                 for(tc = 0;tc < TC_MIN;tc++)
                 {
 DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=Tc)
-HLS_PRAGMA(HLS PIPELINE II=3)
+HLS_PRAGMA(HLS PIPELINE II=1)
+                    const int input_row = Kstride*tr + i;
+                    const int input_col = Kstride*tc + j;
+                    const bool use_bias_init = (i == 0) && (j == 0) && first_input_tile;
+                    int64_t base = 0;
+                    int64_t partial_sum = 0;
+                    int64_t scaled = 0;
+                    int64_t acc = 0;
                     for(tm = 0;tm < Tm;tm++)
                     {
 HLS_PRAGMA(HLS DEPENDENCE variable=output_buffer inter false)
                         // Start from bias (shifted to Qa_out) on the very first tile.
-                        int64_t base;
-                        if(i==0 && j==0 && n==0) {
-                            int s = shift_bias;
+                        if(use_bias_init) {
                             int64_t b = static_cast<int64_t>(local_beta_buffer[tm]);
-                            if (s > 0) {
-                                int adj = (s > 30) ? 30 : s;
-                                const int64_t rnd = 1LL << (adj - 1);
-                                base = (b + rnd) >> adj;
-                            } else if (s < 0) {
-                                int adj = (-s > 30) ? 30 : -s;
-                                base = b << adj;
+                            if (bias_shift_right) {
+                                base = (b + bias_round) >> bias_shift_mag;
+                            } else if (bias_shift_left) {
+                                base = b << bias_shift_mag;
                             } else {
                                 base = b;
                             }
@@ -77,24 +96,23 @@ HLS_PRAGMA(HLS DEPENDENCE variable=output_buffer inter false)
                             base = static_cast<int64_t>(output_buffer[tm][tr][tc]);
                         }
 
-                        int64_t partial_sum = 0;
+                        partial_sum = 0;
                         for(tn = 0;tn <Tn;tn++)
                         {
-                            partial_sum += static_cast<int64_t>(weight_buffer[tm][tn][i][j]) *
-                                           static_cast<int64_t>(input_buffer[tn][Kstride*tr+i][Kstride*tc+j]);
+                            // INT16xINT16 product stays within signed 32-bit; widen once at accumulation.
+                            const int32_t weight_val = static_cast<int32_t>(weight_buffer[tm][tn][i][j]);
+                            const int32_t input_val = static_cast<int32_t>(input_buffer[tn][input_row][input_col]);
+                            partial_sum += static_cast<int64_t>(weight_val * input_val);
                         }
 
-                        int64_t scaled = partial_sum;
-                        if (shift_out > 0) {
-                            int s = (shift_out > 30) ? 30 : shift_out;
-                            const int64_t rnd = 1LL << (s - 1);
-                            scaled = (scaled + rnd) >> s;
-                        } else if (shift_out < 0) {
-                            int s = (-shift_out > 30) ? 30 : -shift_out;
-                            scaled = scaled << s;
+                        scaled = partial_sum;
+                        if (out_shift_right) {
+                            scaled = (scaled + out_round) >> out_shift_mag;
+                        } else if (out_shift_left) {
+                            scaled = scaled << out_shift_mag;
                         }
 
-                        int64_t acc = base + scaled;
+                        acc = base + scaled;
                         if (acc > 32767) acc = 32767;
                         if (acc < -32768) acc = -32768;
                         output_buffer[tm][tr][tc] = static_cast<IO_Dtype>(acc);
@@ -127,7 +145,7 @@ DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=Tr)
                 for(tc = 0;tc < TC_MIN;tc++)
                 {
 DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=Tc)
-HLS_PRAGMA(HLS PIPELINE II=3)
+HLS_PRAGMA(HLS PIPELINE II=1)
                     for(tm = 0;tm < Tm;tm++)
                     {
 HLS_PRAGMA(HLS DEPENDENCE variable=output_buffer inter false)
@@ -156,6 +174,7 @@ HLS_PRAGMA(HLS DEPENDENCE variable=output_buffer inter false)
 
 void nonlinear_leaky_row(IO_Dtype output_localbuf[Tc], IO_Dtype Input[Tm][Tr][Tc], uint8_t tm, uint8_t tr, uint8_t *tm_n, uint8_t *tr_n, uint8_t TC_MIN,const bool IsNL, bool enable)
 {
+HLS_PRAGMA(HLS INLINE)
     if(!enable)
         return ;
 
@@ -192,6 +211,7 @@ HLS_PRAGMA(HLS PIPELINE II=1)
 
 void ofm_mmcpy_row(IO_Dtype *Output, IO_Dtype local_buf[Tc], int offset, int OHxOW, int Output_w, int TC_MIN, uint8_t tm, uint8_t tr,bool enable)
 {
+HLS_PRAGMA(HLS INLINE)
     if(!enable)
         return;
 

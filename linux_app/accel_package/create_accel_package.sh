@@ -68,13 +68,14 @@ xsa_file=""
 bit_file=""
 bit_bin_file=""
 dtbo_file=""
+bit_arg_set=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --accel-name) accel_name="$2"; shift 2 ;;
     --out-dir) out_dir="$2"; shift 2 ;;
     --xsa) xsa_file="$2"; shift 2 ;;
-    --bit) bit_file="$2"; shift 2 ;;
+    --bit) bit_file="$2"; bit_arg_set=1; shift 2 ;;
     --bit-bin) bit_bin_file="$2"; shift 2 ;;
     --dtbo) dtbo_file="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -126,8 +127,12 @@ detect_first_existing() {
 }
 
 if [[ -z "$bit_bin_file" ]]; then
-  if [[ -n "$bit_file" && -f "${bit_file}.bin" ]]; then
-    bit_bin_file="${bit_file}.bin"
+  # If --bit is explicitly provided, prefer converting that bitstream so package artifacts
+  # stay coupled to the selected hardware design. Reuse <bit>.bin only when it is newer.
+  if [[ "$bit_arg_set" -eq 1 && -n "$bit_file" && -f "$bit_file" ]]; then
+    if [[ -f "${bit_file}.bin" && "${bit_file}.bin" -nt "$bit_file" ]]; then
+      bit_bin_file="${bit_file}.bin"
+    fi
   else
     bit_bin_file="$(detect_first_existing \
       "${vivado_dir}/${top_name}.bit.bin" \
@@ -183,21 +188,37 @@ else
     exit 1
   fi
 
+  # Convert using a temporary local copy because bootgen -process_bitstream outputs
+  # '<input>.bin' next to the input bitstream on some versions.
+  local_bit="$tmp_dir/${top_name}.bit"
+  cp "$bit_file" "$local_bit"
+
   bif_file="$tmp_dir/bitstream.bif"
   cat > "$bif_file" <<EOF
 all:
 {
-  $bit_file
+  $local_bit
 }
 EOF
 
   echo "      Running: $bootgen_cmd -image $bif_file -arch zynqmp -process_bitstream bin -o $tmp_dir/${accel_name}.bit.bin"
   "$bootgen_cmd" -image "$bif_file" -arch zynqmp -process_bitstream bin -o "$tmp_dir/${accel_name}.bit.bin"
+
+  # Prefer requested output path, but fall back to bootgen's implicit '<input>.bin' result.
+  if [[ ! -s "$tmp_dir/${accel_name}.bit.bin" && -s "${local_bit}.bin" ]]; then
+    mv "${local_bit}.bin" "$tmp_dir/${accel_name}.bit.bin"
+  fi
 fi
 
 if [[ ! -s "$tmp_dir/${accel_name}.bit.bin" ]]; then
+  ls -la "$tmp_dir" >&2 || true
   echo "ERROR: Failed to produce ${accel_name}.bit.bin" >&2
   exit 1
+fi
+
+# Drop intermediate conversion inputs from the final package folder.
+if [[ -n "${local_bit:-}" ]]; then
+  rm -f "$local_bit" "$bif_file"
 fi
 
 # 2) DTBO (optional here; recommended via XSCT)

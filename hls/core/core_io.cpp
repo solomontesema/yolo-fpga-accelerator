@@ -19,9 +19,6 @@
 void ifm_mmcpy_row(IO_Dtype *input, IO_Dtype local_buf[OnChipIB_Width/8+3][8], int CurrentOffset, int IHxIW, int IW_align_256b, int TCol,
                    uint8_t t1, uint8_t t2, uint8_t *t1_n, uint8_t *t2_n, uint8_t *bn_n, bool enable)
 {
-    if(!enable)
-        return;
-
     const int ifm_offset = CurrentOffset + t1*IHxIW + t2*IW_align_256b;
     const int ifm_trans_offset = (ifm_offset >> 3) << 3;
     const uint8_t begin_num = ifm_offset & 0x7;
@@ -31,9 +28,12 @@ void ifm_mmcpy_row(IO_Dtype *input, IO_Dtype local_buf[OnChipIB_Width/8+3][8], i
     if(TCol_a & 0x7)
         loop_cnts++;
 
-    for(uint16_t t = 0; t < loop_cnts; t++)
+    if(enable)
     {
-        memcpy(local_buf[t], input + ifm_trans_offset + t*8, 8*sizeof(IO_Dtype));
+        for(uint16_t t = 0; t < loop_cnts; t++)
+        {
+            memcpy(local_buf[t], input + ifm_trans_offset + t*8, 8*sizeof(IO_Dtype));
+        }
     }
 
     *t1_n = t1;
@@ -110,12 +110,20 @@ void input_load(IO_Dtype *input, IO_Dtype input_buffer[Tn][OnChipIB_Height][OnCh
 DO_PRAGMA(HLS LOOP_TRIPCOUNT min=1 max=TRow_max)
         if(pp)
         {
-            ifm_mmcpy_row(input, local_buf0, CurrentOffset, IHxIW, IW_align_256b, TCol, t1, t2, &t1_n0, &t2_n0, &bn_n0, t!=TnxTRow);
+            ifm_mmcpy_row(
+                input, local_buf0, CurrentOffset, IHxIW, IW_align_256b, TCol,
+                t1, t2, &t1_n0, &t2_n0, &bn_n0,
+                (t != TnxTRow) && (t1 < TN_MIN)
+            );
             ifm_copy_lbuf2ibuf( input_buffer, local_buf1, TCol, Input_w, Input_h, TN_MIN, pad_value, Coffset, Roffset, t1_n1, t2_n1, bn_n1, t!=0);
             pp = false;
         }else
         {
-            ifm_mmcpy_row(input, local_buf1, CurrentOffset, IHxIW, IW_align_256b, TCol, t1, t2, &t1_n1, &t2_n1, &bn_n1, t!=TnxTRow);
+            ifm_mmcpy_row(
+                input, local_buf1, CurrentOffset, IHxIW, IW_align_256b, TCol,
+                t1, t2, &t1_n1, &t2_n1, &bn_n1,
+                (t != TnxTRow) && (t1 < TN_MIN)
+            );
             ifm_copy_lbuf2ibuf( input_buffer, local_buf0, TCol, Input_w, Input_h, TN_MIN, pad_value, Coffset, Roffset, t1_n0, t2_n0, bn_n0, t!=0);
             pp = true;
         }

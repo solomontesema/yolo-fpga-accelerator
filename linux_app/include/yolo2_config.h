@@ -94,12 +94,12 @@
  * Tiling Parameters (must match HLS design)
  *===========================================================================*/
 // Keep these in sync with `hls/core/params.hpp` used to build the HLS IP.
-#define Tm                     28       // Output channel tile (max)
+#define Tm                     32       // Output channel tile (max)
 #define Tn                     4        // Input channel tile (max)
-#define Tr                     26       // Row tile (max)
-#define Tc                     32       // Column tile (max)
-#define OnChipIB_Height        53       // On-chip input buffer height
-#define OnChipIB_Width         65       // On-chip input buffer width
+#define Tr                     13       // Row tile (max)
+#define Tc                     13       // Column tile (max)
+#define OnChipIB_Height        27       // On-chip input buffer height
+#define OnChipIB_Width         27       // On-chip input buffer width
 
 /*===========================================================================
  * Network Dimensions

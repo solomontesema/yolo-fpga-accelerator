@@ -21,6 +21,8 @@
 #include <string.h>
 #include <math.h>
 #include <stddef.h>
+#include <time.h>
+#include <inttypes.h>
 
 // Weight offsets (from model_config.cpp)
 // Note: These are in elements (words), not bytes
@@ -39,6 +41,105 @@ static const size_t beta_offsets[] = {
 
 #define NUM_WEIGHT_OFFSETS (sizeof(weight_offsets) / sizeof(weight_offsets[0]))
 #define NUM_BETA_OFFSETS (sizeof(beta_offsets) / sizeof(beta_offsets[0]))
+
+static uint64_t yolo2_now_us(void)
+{
+    struct timespec ts;
+#if defined(CLOCK_MONOTONIC_RAW)
+    const clockid_t clk_id = CLOCK_MONOTONIC_RAW;
+#else
+    const clockid_t clk_id = CLOCK_MONOTONIC;
+#endif
+
+    if (clock_gettime(clk_id, &ts) != 0) {
+        if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+            return 0;
+        }
+    }
+
+    return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
+}
+
+static const char *yolo2_layer_type_name(int layer_type)
+{
+    switch (layer_type) {
+        case LAYER_CONVOLUTIONAL: return "conv";
+        case LAYER_MAXPOOL:       return "maxpool";
+        case LAYER_REORG:         return "reorg";
+        case LAYER_ROUTE:         return "route";
+        case LAYER_REGION:        return "region";
+        default:                  return "unknown";
+    }
+}
+
+static void yolo2_print_layer_latency_summary(network_t *net, const uint64_t *layer_time_us)
+{
+    if (!net || !layer_time_us || net->n <= 0) {
+        return;
+    }
+
+    const int max_layers = (net->n < 32) ? net->n : 32;
+    uint64_t total_us = 0;
+    uint64_t max_us = 0;
+    int max_idx = -1;
+    int order[32];
+
+    for (int i = 0; i < max_layers; ++i) {
+        const uint64_t t_us = layer_time_us[i];
+        total_us += t_us;
+        if (t_us > max_us) {
+            max_us = t_us;
+            max_idx = i;
+        }
+        order[i] = i;
+    }
+
+    // Simple descending sort by latency for a compact top-k report.
+    for (int i = 0; i < max_layers; ++i) {
+        int best = i;
+        for (int j = i + 1; j < max_layers; ++j) {
+            if (layer_time_us[order[j]] > layer_time_us[order[best]]) {
+                best = j;
+            }
+        }
+        if (best != i) {
+            int tmp = order[i];
+            order[i] = order[best];
+            order[best] = tmp;
+        }
+    }
+
+    YOLO2_LOG_INFO("\nLayer Latency Summary (KV260 wall-clock)\n");
+    YOLO2_LOG_INFO("  Total measured layer time: %" PRIu64 " us (%.3f ms)\n",
+                   total_us, (double)total_us / 1000.0);
+
+    if (max_idx >= 0) {
+        layer_t *max_layer = &net->layers[max_idx];
+        const double share = (total_us > 0) ? (100.0 * (double)max_us / (double)total_us) : 0.0;
+        YOLO2_LOG_INFO("  Slowest layer: %d (%s) %dx%dx%d -> %dx%dx%d = %" PRIu64 " us (%.3f ms, %.2f%%)\n",
+                       max_idx,
+                       yolo2_layer_type_name(max_layer->type),
+                       max_layer->w, max_layer->h, max_layer->c,
+                       max_layer->out_w, max_layer->out_h, max_layer->out_c,
+                       max_us, (double)max_us / 1000.0, share);
+    }
+
+    const int top_k = (max_layers < 10) ? max_layers : 10;
+    YOLO2_LOG_INFO("  Top %d layers by latency:\n", top_k);
+    for (int rank = 0; rank < top_k; ++rank) {
+        const int layer_idx = order[rank];
+        layer_t *l = &net->layers[layer_idx];
+        const uint64_t t_us = layer_time_us[layer_idx];
+        const double share = (total_us > 0) ? (100.0 * (double)t_us / (double)total_us) : 0.0;
+        YOLO2_LOG_INFO("    #%d L%02d %-7s %3dx%3dx%4d -> %3dx%3dx%4d : %9" PRIu64 " us (%8.3f ms, %6.2f%%)\n",
+                       rank + 1,
+                       layer_idx,
+                       yolo2_layer_type_name(l->type),
+                       l->w, l->h, l->c,
+                       l->out_w, l->out_h, l->out_c,
+                       t_us, (double)t_us / 1000.0, share);
+    }
+}
 
 static uint32_t yolo2_get_layer_timeout_ms(void)
 {
@@ -669,6 +770,7 @@ int yolo2_run_inference(yolo2_inference_context_t *ctx, float *input_image) {
     int TR, TC, TM, TN;
     int output_w, output_h;
     int mLoops;
+    uint64_t layer_time_us[32] = {0};
     
     YOLO2_LOG_INFO("\n[Inference Engine v%s]\n", INFERENCE_VERSION);
     YOLO2_LOG_INFO("Starting inference through %d layers...\n", net->n);
@@ -701,6 +803,7 @@ int yolo2_run_inference(yolo2_inference_context_t *ctx, float *input_image) {
     // Run through all layers
     for (int i = 0; i < net->n; ++i) {
         layer_t *l = &net->layers[i];
+        const uint64_t layer_start_us = yolo2_now_us();
         
         YOLO2_LOG_LAYER("  Processing Layer %d (Type: %d)...\n", i, l->type);
         
@@ -793,7 +896,14 @@ int yolo2_run_inference(yolo2_inference_context_t *ctx, float *input_image) {
                 YOLO2_LOG_LAYER("    Layer %d: UNKNOWN type %d (skipping)\n", i, l->type);
                 break;
         }
+
+        const uint64_t layer_end_us = yolo2_now_us();
+        layer_time_us[i] = (layer_end_us >= layer_start_us) ? (layer_end_us - layer_start_us) : 0;
+        YOLO2_LOG_LAYER("    Layer %d runtime: %" PRIu64 " us (%.3f ms)\n",
+                        i, layer_time_us[i], (double)layer_time_us[i] / 1000.0);
     }
+
+    yolo2_print_layer_latency_summary(net, layer_time_us);
     
     YOLO2_LOG_INFO("\nInference completed successfully!\n");
     return 0;
